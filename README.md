@@ -203,3 +203,8 @@ npm update --latest
 ---
 
 **Happy coding! 🎉**
+
+## 📚 Documentation
+
+- User Flow: see `docs/user-flow.md` for detailed Public and Admin flows, API
+  interactions, and scenarios.

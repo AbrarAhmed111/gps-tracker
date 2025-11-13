@@ -1,0 +1,99 @@
+'use client'
+
+import { useState } from 'react'
+import type { VehicleMarker } from './MapView'
+
+type VehicleListProps = {
+  vehicles: (VehicleMarker & { routeLabel?: string })[]
+  onFocus?: (id: string) => void
+}
+
+const statusStyles: Record<VehicleMarker['status'], string> = {
+  moving: 'bg-blue-600',
+  parked: 'bg-amber-500',
+  inactive: 'bg-gray-400',
+}
+
+export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
+  const [open, setOpen] = useState<boolean>(true)
+
+  return (
+    <aside className="h-full flex flex-col">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between rounded-md border border-gray-300 dark:border-neutral-800 px-3 py-2 text-sm text-gray-800 dark:text-gray-200 bg-white dark:bg-neutral-900 shadow-sm"
+      >
+        <span className="inline-flex items-center gap-2">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            className="text-blue-600"
+          >
+            <path
+              fill="currentColor"
+              d="M5 16h14l1-5H4l1 5m0 2a2 2 0 0 1-2-2l-1-9h20l-1 9a2 2 0 0 1-2 2H5M6 6V4h2v2h8V4h2v2h2a1 1 0 0 1 1 1v1H3V7a1 1 0 0 1 1-1h2Z"
+            />
+          </svg>
+          Vehicles ({vehicles.length})
+        </span>
+        <span className="text-xs text-gray-500">{open ? 'Hide' : 'Show'}</span>
+      </button>
+
+      <div className="mt-3 flex items-center gap-2 text-xs text-gray-600 dark:text-neutral-400">
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-blue-600" />
+          Moving
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-amber-500" />
+          Parked
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-gray-400" />
+          Inactive
+        </span>
+      </div>
+
+      {open && (
+        <ul className="mt-3 space-y-2 overflow-auto">
+          {vehicles.map(v => (
+            <li
+              key={v.id}
+              className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 hover:shadow-sm transition-shadow"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${statusStyles[v.status]}`}
+                  />
+                  <p className="font-medium text-gray-900 dark:text-white">
+                    {v.name}
+                  </p>
+                </div>
+                <button
+                  onClick={() => onFocus?.(v.id)}
+                  className="text-xs px-2 py-1 rounded-md border border-gray-300 dark:border-neutral-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                >
+                  Focus
+                </button>
+              </div>
+              <div className="mt-1 text-xs text-gray-600 dark:text-neutral-400">
+                <p>
+                  Status:{' '}
+                  <span className="capitalize">
+                    {v.status.replace('-', ' ')}
+                  </span>{' '}
+                  • Route: {v.routeLabel ?? '—'}
+                </p>
+                <p>
+                  Pos: {v.lat.toFixed(4)}, {v.lng.toFixed(4)}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </aside>
+  )
+}
