@@ -1,6 +1,7 @@
 # Jazzi Creates Clone
 
-A modern Next.js TypeScript application built with the latest web technologies and best practices.
+A modern Next.js TypeScript application built with the latest web technologies
+and best practices.
 
 ## 🚀 Features
 
@@ -19,18 +20,21 @@ A modern Next.js TypeScript application built with the latest web technologies a
 ## 📋 Prerequisites
 
 Before you begin, ensure you have the following installed:
+
 - [Node.js](https://nodejs.org/) (version 18 or higher)
 - [npm](https://www.npmjs.com/) or [yarn](https://yarnpkg.com/)
 
 ## 🛠️ Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone <repository-url>
    cd jazzi-creates-clone
    ```
 
 2. **Install dependencies**
+
    ```bash
    npm install
    # or
@@ -38,20 +42,23 @@ Before you begin, ensure you have the following installed:
    ```
 
 3. **Set up environment variables**
+
    ```bash
    cp .env.example .env.local
    ```
+
    Edit `.env.local` with your configuration values.
 
 4. **Start the development server**
+
    ```bash
    npm run dev
    # or
    yarn dev
    ```
 
-5. **Open your browser**
-   Navigate to [http://localhost:3000](http://localhost:3000)
+5. **Open your browser** Navigate to
+   [http://localhost:3000](http://localhost:3000)
 
 ## 📜 Available Scripts
 
@@ -86,9 +93,11 @@ src/
 
 ## 🎨 Styling
 
-This project uses **Tailwind CSS** for styling. The configuration is in `tailwind.config.ts`.
+This project uses **Tailwind CSS** for styling. The configuration is in
+`tailwind.config.ts`.
 
 ### Custom CSS Classes
+
 - Global styles are in `src/assets/css/globals.css`
 - Component-specific styles can be added using Tailwind's utility classes
 
@@ -116,22 +125,26 @@ npm run test:watch
 ## 📦 Dependencies
 
 ### Core Dependencies
+
 - **Next.js 15** - React framework
 - **React 18** - UI library
 - **TypeScript** - Type safety
 - **Tailwind CSS** - Utility-first CSS framework
 
 ### State Management
+
 - **Redux Toolkit** - State management
 - **React Redux** - React bindings for Redux
 
 ### UI & UX
+
 - **React Icons** - Icon library
 - **Framer Motion** - Animation library
 - **React Hot Toast** - Toast notifications
 - **React Toastify** - Additional toast functionality
 
 ### Development Tools
+
 - **ESLint** - Code linting
 - **Prettier** - Code formatting
 - **Husky** - Git hooks
@@ -148,7 +161,8 @@ npm run test:watch
 
 ### Commit Convention
 
-This project follows [Conventional Commits](https://www.conventionalcommits.org/):
+This project follows
+[Conventional Commits](https://www.conventionalcommits.org/):
 
 - `feat:` - New features
 - `fix:` - Bug fixes
@@ -160,7 +174,8 @@ This project follows [Conventional Commits](https://www.conventionalcommits.org/
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
+for details.
 
 ## 🆘 Support
 
