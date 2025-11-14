@@ -1,14 +1,23 @@
 'use client'
 
 import { useState } from 'react'
-import type { VehicleMarker } from './MapView'
+
+type VehicleStatus = 'moving' | 'parked' | 'inactive'
+type VehicleListItem = {
+  id: string
+  name: string
+  status: VehicleStatus
+  lat?: number
+  lng?: number
+  routeLabel?: string
+}
 
 type VehicleListProps = {
-  vehicles: (VehicleMarker & { routeLabel?: string })[]
+  vehicles: VehicleListItem[]
   onFocus?: (id: string) => void
 }
 
-const statusStyles: Record<VehicleMarker['status'], string> = {
+const statusStyles: Record<VehicleStatus, string> = {
   moving: 'bg-blue-600',
   parked: 'bg-amber-500',
   inactive: 'bg-gray-400',
@@ -86,9 +95,13 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
                   </span>{' '}
                   • Route: {v.routeLabel ?? '—'}
                 </p>
-                <p>
-                  Pos: {v.lat.toFixed(4)}, {v.lng.toFixed(4)}
-                </p>
+                {typeof v.lat === 'number' && typeof v.lng === 'number' ? (
+                  <p>
+                    Pos: {v.lat.toFixed(4)}, {v.lng.toFixed(4)}
+                  </p>
+                ) : (
+                  <p>Pos: —</p>
+                )}
               </div>
             </li>
           ))}

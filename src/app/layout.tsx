@@ -10,9 +10,12 @@ type RootLayoutProps = {
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <Providers>
-      <html lang="en">
+      <html lang="en" className="h-full">
         <head></head>
-        <body suppressHydrationWarning className="antialiased">
+        <body
+          suppressHydrationWarning
+          className="min-h-screen antialiased bg-gray-50 dark:bg-neutral-900"
+        >
           <Toaster position="top-center" reverseOrder={false} />
           {children}
         </body>

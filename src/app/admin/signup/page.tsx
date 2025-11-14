@@ -4,52 +4,45 @@ import Image from 'next/image'
 import logo from '@/assets/img/trasnparent-logo.png'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { Suspense, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 
-function SignInInner() {
+export default function AdminSignUpPage() {
   const [email, setEmail] = useState<string>('')
   const [password, setPassword] = useState<string>('')
+  const [fullName, setFullName] = useState<string>('')
+  const [username, setUsername] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string>('')
+  const [info, setInfo] = useState<string>('')
   const router = useRouter()
-  const params = useSearchParams()
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    setInfo('')
     setLoading(true)
     try {
-      if (process.env.NEXT_PUBLIC_AUTH_DEBUG === 'true') {
-        // Do not log secrets; just presence flags
-        // eslint-disable-next-line no-console
-        console.log('Auth debug: env present', {
-          hasUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-          hasAnon: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-        })
-      }
       const supabase = createClient()
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            full_name: fullName,
+            username: username || email.split('@')[0],
+          },
+        },
       })
-      if (signInError) {
-        if (process.env.NEXT_PUBLIC_AUTH_DEBUG === 'true') {
-          // eslint-disable-next-line no-console
-          console.error('Supabase sign-in error', {
-            message: signInError.message,
-            name: signInError.name,
-          })
-        }
-        setError(signInError.message)
+      if (signUpError) {
+        setError(signUpError.message)
         return
       }
-      if (process.env.NEXT_PUBLIC_AUTH_DEBUG === 'true') {
-        // eslint-disable-next-line no-console
-        console.log('Supabase sign-in success')
+      if (data.user && !data.user.confirmed_at) {
+        setInfo('Check your email to confirm your account, then sign in.')
+        return
       }
-      const returnUrl = params.get('returnUrl')
-      router.replace(returnUrl ?? '/admin')
+      router.replace('/admin/signin')
       router.refresh()
     } finally {
       setLoading(false)
@@ -70,14 +63,40 @@ function SignInInner() {
           />
           <div>
             <h1 className="text-base font-semibold text-gray-900 dark:text-white">
-              Admin Sign in
+              Admin Sign up
             </h1>
             <p className="text-xs text-gray-600 dark:text-neutral-400">
-              Secure access required
+              Create an admin account
             </p>
           </div>
         </div>
         <form onSubmit={onSubmit} className="mt-6 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-600 dark:text-neutral-400 mb-1">
+                Full name (optional)
+              </label>
+              <input
+                type="text"
+                value={fullName}
+                onChange={e => setFullName(e.target.value)}
+                placeholder="Jane Doe"
+                className="w-full rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 dark:text-neutral-400 mb-1">
+                Username (optional)
+              </label>
+              <input
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder="admin"
+                className="w-full rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+          </div>
           <div>
             <label className="block text-xs text-gray-600 dark:text-neutral-400 mb-1">
               Email
@@ -105,34 +124,24 @@ function SignInInner() {
             />
           </div>
           {error && <p className="text-xs text-red-600">{error}</p>}
+          {info && <p className="text-xs text-amber-600">{info}</p>}
           <button
             type="submit"
             disabled={loading}
             className="w-full rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white py-2 font-medium text-sm transition"
           >
-            {loading ? 'Signing in…' : 'Sign in'}
+            {loading ? 'Creating…' : 'Create account'}
           </button>
           <div className="flex items-center justify-between text-xs">
-            <Link href="#" className="text-blue-600 hover:underline">
-              Forgot password?
+            <Link
+              href="/admin/signin"
+              className="text-gray-600 dark:text-neutral-400 hover:underline"
+            >
+              Have an account? Sign in
             </Link>
           </div>
         </form>
       </div>
     </div>
-  )
-}
-
-export default function AdminSignInPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen grid place-items-center p-4 text-sm text-gray-600 dark:text-neutral-400">
-          Loading…
-        </div>
-      }
-    >
-      <SignInInner />
-    </Suspense>
   )
 }

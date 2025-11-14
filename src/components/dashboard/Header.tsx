@@ -105,6 +105,20 @@ export default function Header({
             </svg>
             Refresh
           </button>
+          <button
+            onClick={async () => {
+              try {
+                await fetch('/api/public/logout', { method: 'POST' })
+                window.location.reload()
+              } catch {
+                window.location.reload()
+              }
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-300 dark:border-neutral-700 bg-white/80 dark:bg-neutral-900/80 text-sm text-gray-800 dark:text-gray-200 hover:bg-white dark:hover:bg-neutral-800 shadow-sm"
+            title="Logout"
+          >
+            Logout
+          </button>
         </div>
       </div>
       <div className="absolute inset-x-0 bottom-0 h-[3px] bg-gray-100 dark:bg-neutral-800">

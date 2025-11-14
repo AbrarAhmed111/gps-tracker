@@ -2,6 +2,7 @@
 
 import Script from 'next/script'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
 export type VehicleMarker = {
   id: string
@@ -23,7 +24,7 @@ declare global {
 }
 
 export default function MapView({ vehicles }: MapViewProps) {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+  const [apiKey, setApiKey] = useState<string | null>(null)
   const mapRef = useRef<HTMLDivElement | null>(null)
   const mapInstanceRef = useRef<any>(null)
   const markersRef = useRef<Map<string, any>>(new Map())
@@ -107,12 +108,36 @@ export default function MapView({ vehicles }: MapViewProps) {
     })
   }, [vehicles, ready])
 
+  // Load API key from DB if env is missing
+  useEffect(() => {
+    if (apiKey) return
+    let active = true
+    ;(async () => {
+      try {
+        const supabase = createClient()
+        const { data } = await supabase
+          .from('system_settings')
+          .select('setting_value')
+          .eq('setting_key', 'google_maps_api_key')
+          .maybeSingle()
+        if (!active) return
+        const key = (data?.setting_value as string) || ''
+        if (key) setApiKey(key)
+      } catch {
+        // ignore
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [apiKey])
+
   return (
     <div className="relative w-full h-full">
       {!apiKey && (
         <div className="absolute inset-0 grid place-items-center z-10">
           <div className="rounded-lg border border-dashed border-gray-300 dark:border-neutral-700 p-6 text-center text-sm text-gray-600 dark:text-neutral-400 bg-white/70 dark:bg-neutral-900/70">
-            Set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY to load the map.
+            Google Maps key not configured. Set it in Admin → Settings.
           </div>
         </div>
       )}

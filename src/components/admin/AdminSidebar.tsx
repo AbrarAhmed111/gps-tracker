@@ -9,6 +9,7 @@ const nav = [
   { href: '/admin/vehicles', label: 'Vehicles', icon: FiTruck },
   { href: '/admin/routes', label: 'Routes', icon: FiMap },
   { href: '/admin/users', label: 'Users', icon: FiUsers },
+  { href: '/admin/public-users', label: 'Public Users', icon: FiUsers },
   { href: '/admin/settings', label: 'Settings', icon: FiSettings },
 ]
 

@@ -8,11 +8,13 @@ import { useRouter } from 'next/navigation'
 type AdminHeaderProps = {
   title?: string
   subtitle?: string
+  onToggleSidebar?: () => void
 }
 
 export default function AdminHeader({
   title = 'Admin Panel',
   subtitle = 'Manage vehicles, routes, and settings',
+  onToggleSidebar,
 }: AdminHeaderProps) {
   const router = useRouter()
   async function signOut() {
@@ -25,6 +27,15 @@ export default function AdminHeader({
     <header className="w-full border-b border-gray-200 dark:border-neutral-800 bg-white/70 dark:bg-neutral-900/70 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-neutral-900/60">
       <div className="px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
+          <button
+            onClick={onToggleSidebar}
+            className="inline-flex lg:hidden items-center justify-center h-9 w-9 rounded-md border border-gray-300 dark:border-neutral-700 text-gray-700 dark:text-gray-200 bg-white/80 dark:bg-neutral-900/80"
+            aria-label="Open navigation"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24">
+              <path fill="currentColor" d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z" />
+            </svg>
+          </button>
           <Image
             src={logo}
             width={32}
@@ -43,9 +54,6 @@ export default function AdminHeader({
           </div>
         </div>
         <div className="hidden sm:flex items-center gap-2">
-          <button className="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs shadow-sm">
-            New
-          </button>
           <button
             onClick={signOut}
             className="px-3 py-1.5 rounded-md border border-gray-300 dark:border-neutral-700 text-gray-800 dark:text-gray-200 text-xs hover:bg-gray-50 dark:hover:bg-neutral-800"
