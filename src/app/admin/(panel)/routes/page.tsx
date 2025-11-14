@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'react-hot-toast'
+import { axiosInstance } from '@/utils/axios'
 
 type Vehicle = { id: string; name: string }
 type RouteRow = {
@@ -48,7 +49,7 @@ export default function RoutesPage() {
     saturday: false,
     sunday: false,
   })
-  const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [file, setFile] = useState<File | null>(null)
   const [saving, setSaving] = useState<boolean>(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -90,6 +91,33 @@ export default function RoutesPage() {
     }
   }, [])
 
+  async function fileToBase64(f: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const res = reader.result as string
+        const base64 = res.split(',')[1] || ''
+        resolve(base64)
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(f)
+    })
+  }
+
+  function dayFlagsFromNumbers(nums: number[]) {
+    const has = (n: number) => nums.includes(n)
+    // Backend schemas use Monday=0..Sunday=6
+    return {
+      monday: has(0),
+      tuesday: has(1),
+      wednesday: has(2),
+      thursday: has(3),
+      friday: has(4),
+      saturday: has(5),
+      sunday: has(6),
+    }
+  }
+
   async function handleCreate() {
     if (!vehicleId) {
       toast.error('Select a vehicle')
@@ -102,60 +130,91 @@ export default function RoutesPage() {
     try {
       setSaving(true)
       const supabase = createClient()
-      // Compute checksum if file provided
-      let checksum = `manual-${crypto.randomUUID()}`
       let fileName = 'manual'
-      let waypoints: Array<{
-        sequence_number: number
-        latitude: number
-        longitude: number
-        timestamp?: string
-        day_of_week?: number
-      }> = []
-      if (csvFile) {
-        fileName = csvFile.name
-        const buf = await csvFile.arrayBuffer()
-        const digest = await crypto.subtle.digest('SHA-256', buf)
-        checksum = Array.from(new Uint8Array(digest))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('')
-        // naive CSV parsing: header: latitude,longitude[,timestamp][,day_of_week]
-        const text = new TextDecoder().decode(buf)
-        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-        let start = 0
-        // detect header by non-numeric
-        if (lines.length > 0 && /[a-zA-Z]/.test(lines[0])) start = 1
-        let seq = 1
-        for (let i = start; i < lines.length; i++) {
-          const cols = lines[i].split(',').map(s => s.trim())
-          const lat = Number(cols[0])
-          const lng = Number(cols[1])
-          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue
-          const timestamp = cols[2] && cols[2].length > 0 ? cols[2] : undefined
-          const dow = cols[3] != null && cols[3] !== '' ? Number(cols[3]) : undefined
-          waypoints.push({
-            sequence_number: seq++,
-            latitude: lat,
-            longitude: lng,
-            timestamp,
-            day_of_week: Number.isFinite(dow as any) ? (dow as number) : undefined,
-          })
+      let checksum = `manual-${crypto.randomUUID()}`
+      let totalWaypoints = 0
+      let parsedWaypoints:
+        | Array<{
+            sequence_number: number
+            latitude: number | null
+            longitude: number | null
+            timestamp: string | null
+            day_of_week: number
+            is_parking?: boolean
+          }>
+        | null = null
+      let activeDayFlags = { ...days }
+
+      if (file) {
+        fileName = file.name
+        const fileContentB64 = await fileToBase64(file)
+        // Process via backend Excel processor
+        if (!axiosInstance.defaults.baseURL) {
+          throw new Error('Backend base URL not configured. Set NEXT_PUBLIC_BACKEND_BASE_URL.')
         }
+        const resp = await axiosInstance.post('/api/v1/excel/process', {
+          file_content: fileContentB64,
+          file_name: fileName,
+          options: null,
+        })
+        const payload = resp.data?.data
+        if (!payload) throw new Error('Invalid response from backend')
+        checksum = payload.file_info?.file_checksum || checksum
+        const daysFound: number[] = (payload.route_summary?.days_found ?? []) as number[]
+        activeDayFlags = dayFlagsFromNumbers(daysFound)
+        const byDay = payload.waypoints_by_day || {}
+        const items: Array<{
+          sequence_number: number
+          latitude: number | null
+          longitude: number | null
+          timestamp: string | null
+          day_of_week: number
+          is_parking?: boolean
+        }> = []
+        Object.keys(byDay).forEach(k => {
+          const dNum = Number(k)
+          const arr = byDay[k] as any[]
+          for (const w of arr) {
+            items.push({
+              sequence_number: Number(w.sequence) || items.length + 1,
+              latitude: w.latitude ?? null,
+              longitude: w.longitude ?? null,
+              timestamp: w.timestamp || null,
+              day_of_week: Number.isFinite(dNum) ? dNum : 0,
+              is_parking: Boolean(w.is_parking),
+            })
+          }
+        })
+        totalWaypoints = items.length
+        parsedWaypoints = items
       }
+
+      // Keep only waypoints with valid coordinates
+      const validWaypoints =
+        (parsedWaypoints ?? []).filter(
+          w =>
+            typeof w.latitude === 'number' &&
+            typeof w.longitude === 'number' &&
+            Number.isFinite(w.latitude) &&
+            Number.isFinite(w.longitude),
+        )
+      // Adjust total to reflect stored rows
+      totalWaypoints = validWaypoints.length
+
       const insertRoute = {
         vehicle_id: vehicleId,
         route_name: routeName.trim(),
         file_name: fileName,
         file_checksum: checksum,
-        total_waypoints: waypoints.length,
+        total_waypoints: totalWaypoints,
         is_active: true,
-        monday: days.monday,
-        tuesday: days.tuesday,
-        wednesday: days.wednesday,
-        thursday: days.thursday,
-        friday: days.friday,
-        saturday: days.saturday,
-        sunday: days.sunday,
+        monday: activeDayFlags.monday,
+        tuesday: activeDayFlags.tuesday,
+        wednesday: activeDayFlags.wednesday,
+        thursday: activeDayFlags.thursday,
+        friday: activeDayFlags.friday,
+        saturday: activeDayFlags.saturday,
+        sunday: activeDayFlags.sunday,
       }
       const { data: routeIns, error: rErr } = await supabase
         .from('routes')
@@ -164,22 +223,18 @@ export default function RoutesPage() {
         .maybeSingle()
       if (rErr) throw rErr
       const routeId = routeIns?.id as string
-      if (csvFile && waypoints.length > 0) {
+      if (validWaypoints && validWaypoints.length > 0) {
         // batch insert in chunks of 1k
         const batches = []
-        for (let i = 0; i < waypoints.length; i += 1000) {
-          const chunk = waypoints.slice(i, i + 1000).map(wp => ({
+        for (let i = 0; i < validWaypoints.length; i += 1000) {
+          const chunk = validWaypoints.slice(i, i + 1000).map(wp => ({
             route_id: routeId,
             sequence_number: wp.sequence_number,
-            latitude: wp.latitude,
-            longitude: wp.longitude,
+            latitude: wp.latitude ?? null,
+            longitude: wp.longitude ?? null,
+            // Ensure timestamp is non-null due to NOT NULL constraint
             timestamp: wp.timestamp ? new Date(wp.timestamp).toISOString() : new Date().toISOString(),
-            day_of_week:
-              typeof wp.day_of_week === 'number'
-                ? wp.day_of_week
-                : new Date().getDay() === 0
-                  ? 6
-                  : new Date().getDay() - 1,
+            day_of_week: typeof wp.day_of_week === 'number' ? wp.day_of_week : 0,
           }))
           batches.push(
             supabase.from('waypoints').insert(chunk),
@@ -203,7 +258,7 @@ export default function RoutesPage() {
       setShowModal(false)
       setVehicleId('')
       setRouteName('')
-      setCsvFile(null)
+      setFile(null)
     } catch (e: any) {
       toast.error(e?.message || 'Failed to create route')
     } finally {
@@ -361,16 +416,14 @@ export default function RoutesPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-600 dark:text-neutral-400 mb-1">Waypoints CSV (optional)</label>
+                <label className="block text-xs text-gray-600 dark:text-neutral-400 mb-1">Waypoints Excel (.xlsx/.xls)</label>
                 <input
                   type="file"
-                  accept=".csv,text/csv"
-                  onChange={e => setCsvFile(e.target.files?.[0] ?? null)}
+                  accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                  onChange={e => setFile(e.target.files?.[0] ?? null)}
                   className="block w-full text-xs text-gray-600 dark:text-neutral-400"
                 />
-                <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
-                  Columns: latitude,longitude[,timestamp][,day_of_week]
-                </p>
+                <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">Required columns: timestamp, latitude, longitude. Optional: day_of_week, is_parking, address, notes.</p>
               </div>
               <div>
                 <div className="text-xs text-gray-600 dark:text-neutral-400 mb-1">Active days</div>

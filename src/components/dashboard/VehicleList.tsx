@@ -10,6 +10,13 @@ type VehicleListItem = {
   lat?: number
   lng?: number
   routeLabel?: string
+  color?: string
+  lastUpdated?: string
+  speedKmh?: number
+  etaNextMinutes?: number
+  progressPercent?: number
+  vehicleNumber?: string
+  vehicleType?: string
 }
 
 type VehicleListProps = {
@@ -74,7 +81,17 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span
-                    className={`h-2.5 w-2.5 rounded-full ${statusStyles[v.status]}`}
+                    className="h-2.5 w-2.5 rounded-full border border-white dark:border-neutral-900"
+                    style={{
+                      backgroundColor:
+                        v.color && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.color)
+                          ? v.color
+                          : v.status === 'moving'
+                            ? '#2563eb'
+                            : v.status === 'parked'
+                              ? '#f59e0b'
+                              : '#6b7280',
+                    }}
                   />
                   <p className="font-medium text-gray-900 dark:text-white">
                     {v.name}
@@ -88,6 +105,10 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
                 </button>
               </div>
               <div className="mt-1 text-xs text-gray-600 dark:text-neutral-400">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {v.vehicleNumber && <span>No: {v.vehicleNumber}</span>}
+                  {v.vehicleType && <span>Type: {v.vehicleType}</span>}
+                </div>
                 <p>
                   Status:{' '}
                   <span className="capitalize">
@@ -101,6 +122,30 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
                   </p>
                 ) : (
                   <p>Pos: —</p>
+                )}
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {v.speedKmh != null && (
+                    <span>Speed: {v.speedKmh.toFixed(1)} km/h</span>
+                  )}
+                  {v.etaNextMinutes != null && (
+                    <span>ETA next: {v.etaNextMinutes.toFixed(1)} min</span>
+                  )}
+                  {v.lastUpdated && (
+                    <span>Last: {new Date(v.lastUpdated).toLocaleTimeString()}</span>
+                  )}
+                </div>
+                {typeof v.progressPercent === 'number' && (
+                  <div className="mt-2">
+                    <div className="h-1.5 w-full rounded bg-gray-200 dark:bg-neutral-800 overflow-hidden">
+                      <div
+                        className="h-full bg-blue-600"
+                        style={{ width: `${Math.max(0, Math.min(100, v.progressPercent))}%` }}
+                      />
+                    </div>
+                    <div className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
+                      Route progress: {Math.round(v.progressPercent)}%
+                    </div>
+                  </div>
                 )}
               </div>
             </li>

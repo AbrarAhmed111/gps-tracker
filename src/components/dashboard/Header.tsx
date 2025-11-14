@@ -8,12 +8,16 @@ type HeaderProps = {
   title?: string
   refreshMinutes?: number
   onManualRefresh?: () => void
+  lastSyncedAt?: string
+  loading?: boolean
 }
 
 export default function Header({
   title = 'GPS Simulation Dashboard',
   refreshMinutes = 10,
   onManualRefresh,
+  lastSyncedAt,
+  loading = false,
 }: HeaderProps) {
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
   const [now, setNow] = useState<Date>(new Date())
@@ -83,7 +87,17 @@ export default function Header({
                 {(secondsToNext % 60).toString().padStart(2, '0')}
               </span>
               <span className="hidden sm:inline text-gray-400">•</span>
-              <span className="hidden sm:inline">Live simulation</span>
+              <span className="hidden sm:inline">
+                {loading ? 'Syncing…' : 'Live simulation'}
+              </span>
+              {lastSyncedAt && (
+                <>
+                  <span className="hidden sm:inline text-gray-400">•</span>
+                  <span className="hidden sm:inline">
+                    Last sync: {new Date(lastSyncedAt).toLocaleTimeString()}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>

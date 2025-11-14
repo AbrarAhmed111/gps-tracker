@@ -1,6 +1,10 @@
 import axios from 'axios'
-export const baseDomain = process.env.NEXT_PUBLIC_BASE_URL
+
+// Prefer client-exposed var; fall back to server var if available at build time.
+const backendBase =
+  process.env.NEXT_PUBLIC_BACKEND_BASE_URL ||
+  process.env.BACKEND_BASE_URL
 
 export const axiosInstance = axios.create({
-  baseURL: baseDomain,
+  baseURL: backendBase,
 })
