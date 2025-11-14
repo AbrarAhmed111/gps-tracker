@@ -7,9 +7,7 @@ export async function POST() {
     path: '/',
     sameSite: 'lax',
     secure: true,
-    maxAge: 0
+    maxAge: 0,
   })
   return res
 }
-
-
