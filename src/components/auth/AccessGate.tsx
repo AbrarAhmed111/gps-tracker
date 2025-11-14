@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { ReactNode } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
 type AccessGateProps = {
   children: ReactNode
@@ -18,6 +19,13 @@ export default function AccessGate({ children }: AccessGateProps) {
     let mounted = true
     async function check() {
       try {
+        // If an admin is logged in, allow access without password
+        const supabase = createClient()
+        const { data: userRes } = await supabase.auth.getUser()
+        if (mounted && userRes.user) {
+          setGranted(true)
+          return
+        }
         const res = await fetch('/api/public/session', { cache: 'no-store' })
         if (!mounted) return
         if (res.ok) {

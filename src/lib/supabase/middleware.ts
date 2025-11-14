@@ -50,7 +50,7 @@ export async function updateSession(request: NextRequest) {
       })
     }
     // Redirect authenticated users away from auth pages
-    if (isAuthPage || currentPath === '/') {
+    if (isAuthPage) {
       const returnUrl = request.nextUrl.searchParams.get('returnUrl')
       if (returnUrl) {
         try {
