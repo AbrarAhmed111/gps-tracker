@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import bcrypt from 'bcryptjs'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { randomUUID } from 'crypto'
 
 function getClientIp(req: Request) {
   const xff = req.headers.get('x-forwarded-for')
@@ -54,9 +55,24 @@ export async function POST(request: Request) {
         { status: 401 },
       )
     }
+    // Read or create a session nonce so admins can force-logout public users
+    const { data: nonceRow } = await admin
+      .from('system_settings')
+      .select('id, setting_value')
+      .eq('setting_key', 'public_access_nonce')
+      .maybeSingle()
+    const nonce = nonceRow?.setting_value || randomUUID()
+    if (!nonceRow) {
+      await admin
+        .from('system_settings')
+        .upsert(
+          [{ setting_key: 'public_access_nonce', setting_value: nonce }],
+          { onConflict: 'setting_key' },
+        )
+    }
     const res = NextResponse.json({ granted: true })
     const maxAge = 60 * 60 * 8 // 8 hours
-    res.cookies.set('public_access_granted', '1', {
+    res.cookies.set('public_access_granted', `1:${nonce}`, {
       httpOnly: true,
       path: '/',
       sameSite: 'lax',

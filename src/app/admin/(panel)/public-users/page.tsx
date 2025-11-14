@@ -124,6 +124,26 @@ export default function PublicUsersPage() {
         <p className="text-xs text-gray-600 dark:text-neutral-400">
           This affects the password users enter for public dashboard access.
         </p>
+        <div className="mt-2">
+          <button
+            onClick={async () => {
+              try {
+                const res = await fetch('/api/admin/public-users/force-logout', { method: 'POST' })
+                if (!res.ok) {
+                  const j = await res.json().catch(() => ({} as any))
+                  throw new Error(j?.error || 'Failed to sign out all')
+                }
+                toast.success('All public users signed out')
+              } catch (e: any) {
+                toast.error(e?.message || 'Failed to sign out all')
+              }
+            }}
+            className="px-3 py-1.5 rounded-md border border-gray-300 dark:border-neutral-700 text-gray-800 dark:text-gray-200 text-xs hover:bg-gray-50 dark:hover:bg-neutral-800"
+            title="Force sign out all public sessions"
+          >
+            Sign out all public users
+          </button>
+        </div>
         <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-gray-600 dark:text-neutral-400 mb-1">
