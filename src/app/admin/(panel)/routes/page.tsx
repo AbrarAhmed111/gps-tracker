@@ -141,6 +141,7 @@ export default function RoutesPage() {
             timestamp: string | null
             day_of_week: number
             is_parking?: boolean
+            original_address?: string | null
           }>
         | null = null
       let activeDayFlags = { ...days }
@@ -163,6 +164,7 @@ export default function RoutesPage() {
         const daysFound: number[] = (payload.route_summary?.days_found ?? []) as number[]
         activeDayFlags = dayFlagsFromNumbers(daysFound)
         const byDay = payload.waypoints_by_day || {}
+        const addressesToGeocode: Array<{ address: string; cache_key?: string }> = payload.addresses_to_geocode || []
         const items: Array<{
           sequence_number: number
           latitude: number | null
@@ -170,6 +172,7 @@ export default function RoutesPage() {
           timestamp: string | null
           day_of_week: number
           is_parking?: boolean
+          original_address?: string | null
         }> = []
         Object.keys(byDay).forEach(k => {
           const dNum = Number(k)
@@ -182,9 +185,70 @@ export default function RoutesPage() {
               timestamp: w.timestamp || null,
               day_of_week: Number.isFinite(dNum) ? dNum : 0,
               is_parking: Boolean(w.is_parking),
+              original_address: w.original_address || null,
             })
           }
         })
+        // If any items need geocoding, call backend batch with API key from DB
+        const needsGeo = items.some(it => (it.latitude == null || it.longitude == null) && it.original_address)
+        if (needsGeo) {
+          const { data: keyRow } = await supabase
+            .from('system_settings')
+            .select('setting_value')
+            .eq('setting_key', 'google_maps_api_key')
+            .maybeSingle()
+          const apiKey = (keyRow?.setting_value as string) || ''
+          if (apiKey) {
+            const uniqueAddresses = Array.from(
+              new Set(
+                addressesToGeocode
+                  .map(a => a.address)
+                  .filter(a => typeof a === 'string' && a.trim().length > 0),
+              ),
+            )
+            if (uniqueAddresses.length > 0) {
+              const geoResp = await axiosInstance.post('/api/v1/geocoding/batch', {
+                api_key: apiKey,
+                addresses: uniqueAddresses.map((addr, i) => ({
+                  id: String(i + 1),
+                  address: addr,
+                })),
+              })
+              const results: Array<any> = geoResp.data?.results || []
+              const addrToCoord = new Map<string, { lat: number; lng: number }>()
+              for (const r of results) {
+                if (r && (r.latitude != null || r?.data?.latitude != null)) {
+                  const lat = typeof r.latitude === 'number' ? r.latitude : Number(r?.data?.latitude)
+                  const lng = typeof r.longitude === 'number' ? r.longitude : Number(r?.data?.longitude)
+                  // r.original_address may exist, else skip mapping by address we sent back (not always echoed)
+                  if (Number.isFinite(lat) && Number.isFinite(lng) && r.original_address) {
+                    addrToCoord.set(r.original_address, { lat, lng })
+                  }
+                }
+              }
+              // Fallback mapping by sent addresses if original_address missing in response
+              if (addrToCoord.size === 0 && results.length === uniqueAddresses.length) {
+                results.forEach((r, idx) => {
+                  const lat = typeof r.latitude === 'number' ? r.latitude : Number(r?.data?.latitude)
+                  const lng = typeof r.longitude === 'number' ? r.longitude : Number(r?.data?.longitude)
+                  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                    addrToCoord.set(uniqueAddresses[idx], { lat, lng })
+                  }
+                })
+              }
+              // Apply coordinates to items lacking lat/lng
+              items.forEach(it => {
+                if ((it.latitude == null || it.longitude == null) && it.original_address) {
+                  const c = addrToCoord.get(it.original_address)
+                  if (c) {
+                    it.latitude = c.lat
+                    it.longitude = c.lng
+                  }
+                }
+              })
+            }
+          }
+        }
         totalWaypoints = items.length
         parsedWaypoints = items
       }
@@ -235,6 +299,7 @@ export default function RoutesPage() {
             // Ensure timestamp is non-null due to NOT NULL constraint
             timestamp: wp.timestamp ? new Date(wp.timestamp).toISOString() : new Date().toISOString(),
             day_of_week: typeof wp.day_of_week === 'number' ? wp.day_of_week : 0,
+            original_address: wp.original_address ?? null,
           }))
           batches.push(
             supabase.from('waypoints').insert(chunk),

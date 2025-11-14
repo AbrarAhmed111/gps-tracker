@@ -1,210 +1,115 @@
-# Jazzi Creates Clone
+# GPS Simulation Dashboard (Frontend)
 
-A modern Next.js TypeScript application built with the latest web technologies
-and best practices.
+Next.js + Supabase dashboard for simulated GPS tracking with a public map and a secure admin panel. This README covers only the frontend; the backend service is integrated via HTTP and configured in environment variables.
 
-## 🚀 Features
+## Features
 
-- **Next.js 15** with App Router
-- **TypeScript** for type safety
-- **Tailwind CSS** for styling
-- **Redux Toolkit** for state management
-- **React Icons** for beautiful icons
-- **Framer Motion** for animations
-- **React Hot Toast** for notifications
-- **ESLint & Prettier** for code quality
-- **Husky & lint-staged** for pre-commit hooks
-- **Jest & Testing Library** for testing
-- **Commitlint** for conventional commits
+- Next.js 15 App Router, TypeScript, Tailwind CSS
+- Supabase Auth (admin users), SQL schema, RLS policies
+- Public dashboard gated by a shared password (cookie session + admin bypass)
+- Google Maps with dynamic API key from DB and road-following marker animation
+- Admin panel: overview, vehicles, routes (Excel upload), users, public users, settings
+- Excel ingestion + (optional) geocoding via external API
+- Simulation positions fetched from an external Python API and rendered live
 
-## 📋 Prerequisites
+## Prerequisites
 
-Before you begin, ensure you have the following installed:
+- Node.js 18+
+- Supabase project (URL + anon key + service role key)
+- Google Maps API key (Browser key for Maps JS)
+- External backend base URL (Python API) reachable from the browser
 
-- [Node.js](https://nodejs.org/) (version 18 or higher)
-- [npm](https://www.npmjs.com/) or [yarn](https://yarnpkg.com/)
+## Quick Start
 
-## 🛠️ Installation
+1) Install
+```bash
+npm install
+```
 
-1. **Clone the repository**
+2) Configure environment
+Create `.env.local` with:
+```
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR-ANON-KEY
+SUPABASE_SERVICE_ROLE_KEY=YOUR-SERVICE-ROLE-KEY
+NEXT_PUBLIC_BACKEND_BASE_URL=http://localhost:8000
+```
 
-   ```bash
-   git clone <repository-url>
-   cd jazzi-creates-clone
-   ```
+3) Initialize database
+- Open Supabase SQL editor and run `src/lib/types/schema.sql`.
+- Seed `system_settings`:
+  - `app_name` = e.g. "GPS Simulation Dashboard"
+  - `map_refresh_interval_sec` = e.g. "10"
+  - `google_maps_api_key` = your Maps browser key
+- Create a public password record in `public_access` (UI supports changing it later).
 
-2. **Install dependencies**
+4) Start dev
+```bash
+npm run dev
+# visit http://localhost:3000
+```
 
-   ```bash
-   npm install
-   # or
-   yarn install
-   ```
+## How It Works
 
-3. **Set up environment variables**
+- Public `/`:
+  - Access protected by `AccessGate` (cookie or admin session).
+  - Loads active vehicles, their active routes + waypoints from Supabase.
+  - Calls `${NEXT_PUBLIC_BACKEND_BASE_URL}/api/v1/simulation/calculate-positions-batch` for current positions.
+  - Map uses DB key (`system_settings.google_maps_api_key`) and animates markers.
 
-   ```bash
-   cp .env.example .env.local
-   ```
+- Admin panel `/admin`:
+  - Sign in/up with Supabase Auth.
+  - Settings updates `system_settings` (app name, refresh interval, Maps key).
+  - Vehicles CRUD.
+  - Routes: upload Excel → parse via external API → (optionally) geocode missing points using `${BACKEND}/api/v1/geocoding/batch` with the API key from DB → persist to `routes` and `waypoints`.
+  - Users: create/delete via Supabase Admin API (requires `SUPABASE_SERVICE_ROLE_KEY`).
+  - Public users: change public password, view logs, sign out all (nonce rotation).
 
-   Edit `.env.local` with your configuration values.
+## Excel Upload
 
-4. **Start the development server**
+- Expected columns (case-insensitive): `timestamp`, `latitude`, `longitude`
+- Optional: `day_of_week` (0=Mon..6=Sun), `is_parking`, `address`, `notes`
+- Missing coords + address → batch geocoding via external API with `api_key` from DB.
 
-   ```bash
-   npm run dev
-   # or
-   yarn dev
-   ```
+## Environment Variables
 
-5. **Open your browser** Navigate to
-   [http://localhost:3000](http://localhost:3000)
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` (server-side API routes only)
+- `NEXT_PUBLIC_BACKEND_BASE_URL` (external API root, no trailing slash)
 
-## 📜 Available Scripts
+Optional:
+- `NEXT_PUBLIC_AUTH_DEBUG=true` (verbose auth logs)
 
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run start` - Start production server
-- `npm run lint` - Run ESLint with auto-fix
-- `npm run format` - Format code with Prettier
-- `npm run test` - Run tests
-- `npm run test:watch` - Run tests in watch mode
+## Scripts
 
-## 🏗️ Project Structure
+- `npm run dev` – start dev server
+- `npm run build` – production build
+- `npm run start` – start production
+- `npm run lint` – ESLint
+- `npm run format` – Prettier
+
+## Project Structure (Frontend)
 
 ```
 src/
-├── app/                 # Next.js App Router pages
-│   ├── error.tsx       # Error boundary
-│   ├── layout.tsx      # Root layout
-│   ├── not-found.tsx   # 404 page
-│   └── page.tsx        # Home page
-├── assets/             # Static assets
-│   ├── css/           # Global styles
-│   └── img/           # Images
-├── components/         # Reusable components
-│   └── global/        # Global components
-├── store/             # Redux store configuration
-│   ├── Providers.tsx  # Store providers
-│   └── sample/        # Example Redux slices
-└── utils/             # Utility functions
-    └── axios.ts       # Axios configuration
+├── app/                      # App Router pages & API routes
+│   ├── admin/                # Admin UI
+│   ├── api/                  # Next.js API (auth, public gate, admin users)
+│   └── page.tsx              # Public dashboard
+├── assets/                   # CSS / images
+├── components/               # UI components
+├── lib/                      # Supabase clients, middleware, types, schema.sql
+└── utils/axios.ts            # External API client (reads BACKEND_BASE_URL)
 ```
 
-## 🎨 Styling
+## Common Pitfalls
 
-This project uses **Tailwind CSS** for styling. The configuration is in
-`tailwind.config.ts`.
+- Map not loading: ensure `google_maps_api_key` exists in DB.
+- No markers: ensure at least one active route per vehicle with waypoints.
+- Not Found calling external API: set `NEXT_PUBLIC_BACKEND_BASE_URL` (includes `/api` prefix in code).
+- Admin user creation fails: verify `SUPABASE_SERVICE_ROLE_KEY` is set in deployment.
 
-### Custom CSS Classes
+## License
 
-- Global styles are in `src/assets/css/globals.css`
-- Component-specific styles can be added using Tailwind's utility classes
-
-## 🔧 Configuration Files
-
-- `next.config.mjs` - Next.js configuration
-- `tailwind.config.ts` - Tailwind CSS configuration
-- `tsconfig.json` - TypeScript configuration
-- `jest.config.js` - Jest testing configuration
-- `commitlint.config.js` - Commit message linting
-- `release-please-config.json` - Release automation
-
-## 🧪 Testing
-
-The project includes Jest and React Testing Library for testing:
-
-```bash
-# Run all tests
-npm run test
-
-# Run tests in watch mode
-npm run test:watch
-```
-
-## 📦 Dependencies
-
-### Core Dependencies
-
-- **Next.js 15** - React framework
-- **React 18** - UI library
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Utility-first CSS framework
-
-### State Management
-
-- **Redux Toolkit** - State management
-- **React Redux** - React bindings for Redux
-
-### UI & UX
-
-- **React Icons** - Icon library
-- **Framer Motion** - Animation library
-- **React Hot Toast** - Toast notifications
-- **React Toastify** - Additional toast functionality
-
-### Development Tools
-
-- **ESLint** - Code linting
-- **Prettier** - Code formatting
-- **Husky** - Git hooks
-- **lint-staged** - Pre-commit linting
-- **Commitlint** - Commit message validation
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Commit Convention
-
-This project follows
-[Conventional Commits](https://www.conventionalcommits.org/):
-
-- `feat:` - New features
-- `fix:` - Bug fixes
-- `docs:` - Documentation changes
-- `style:` - Code style changes
-- `refactor:` - Code refactoring
-- `test:` - Test changes
-- `chore:` - Build process or auxiliary tool changes
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
-for details.
-
-## 🆘 Support
-
-If you encounter any issues or have questions:
-
-1. Check the [Issues](https://github.com/your-repo/issues) page
-2. Create a new issue with detailed information
-3. Contact the maintainers
-
-## 🔄 Updates
-
-To keep your project up to date:
-
-```bash
-# Update dependencies
-npm update
-
-# Check for outdated packages
-npm outdated
-
-# Update to latest versions (use with caution)
-npm update --latest
-```
-
----
-
-**Happy coding! 🎉**
-
-## 📚 Documentation
-
-- User Flow: see `docs/user-flow.md` for detailed Public and Admin flows, API
-  interactions, and scenarios.
+MIT. See LICENSE.
