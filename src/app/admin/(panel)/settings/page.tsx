@@ -8,22 +8,26 @@ const SETTING_KEYS = {
   appName: 'app_name',
   mapsKey: 'google_maps_api_key',
   refreshSec: 'map_refresh_interval_sec',
+  maintenance: 'maintenance_mode_enabled',
 } as const
 
 export default function SettingsPage() {
   const [appName, setAppName] = useState<string>('')
   const [refreshMinutes, setRefreshMinutes] = useState<number>(10)
   const [mapsKey, setMapsKey] = useState<string>('')
+  const [maintenanceMode, setMaintenanceMode] = useState<boolean>(false)
   const [showKey, setShowKey] = useState<boolean>(false)
   const [loading, setLoading] = useState<boolean>(true)
   const [saving, setSaving] = useState<{
     app: boolean
     interval: boolean
     map: boolean
+    maintenance: boolean
   }>({
     app: false,
     interval: false,
     map: false,
+    maintenance: false,
   })
 
   useEffect(() => {
@@ -38,6 +42,7 @@ export default function SettingsPage() {
           SETTING_KEYS.appName,
           SETTING_KEYS.mapsKey,
           SETTING_KEYS.refreshSec,
+          SETTING_KEYS.maintenance,
         ])
       if (!active) return
       if (error) {
@@ -54,6 +59,7 @@ export default function SettingsPage() {
         Number.isFinite(secNum) ? Math.max(1, Math.round(secNum / 60)) : 10,
       )
       setMapsKey(get(SETTING_KEYS.mapsKey))
+      setMaintenanceMode(get(SETTING_KEYS.maintenance) === 'true')
       setLoading(false)
     }
     load()
@@ -106,6 +112,21 @@ export default function SettingsPage() {
       toast.error(e?.message || 'Failed to save API key')
     } finally {
       setSaving(s => ({ ...s, map: false }))
+    }
+  }
+
+  async function saveMaintenance() {
+    try {
+      setSaving(s => ({ ...s, maintenance: true }))
+      await upsertSetting(
+        SETTING_KEYS.maintenance,
+        maintenanceMode ? 'true' : 'false',
+      )
+      toast.success('Maintenance mode updated')
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update maintenance mode')
+    } finally {
+      setSaving(s => ({ ...s, maintenance: false }))
     }
   }
 
@@ -199,6 +220,34 @@ export default function SettingsPage() {
             className="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm shadow-sm"
           >
             {saving.map ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 shadow-sm">
+        <h3 className="text-sm font-medium text-gray-900 dark:text-white">
+          Maintenance Mode
+        </h3>
+        <p className="text-xs text-gray-600 dark:text-neutral-400">
+          Temporarily hides the public dashboard behind a maintenance message.
+        </p>
+        <div className="mt-3 flex items-center gap-3">
+          <label className="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={maintenanceMode}
+              onChange={e => setMaintenanceMode(e.target.checked)}
+              disabled={loading}
+            />
+            Enable maintenance screen
+          </label>
+          <button
+            onClick={saveMaintenance}
+            disabled={loading || saving.maintenance}
+            className="ml-auto px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm shadow-sm"
+          >
+            {saving.maintenance ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>

@@ -40,15 +40,6 @@ export default function RoutesPage() {
   const [showModal, setShowModal] = useState<boolean>(false)
   const [vehicleId, setVehicleId] = useState<string>('')
   const [routeName, setRouteName] = useState<string>('')
-  const [days, setDays] = useState<Record<string, boolean>>({
-    monday: true,
-    tuesday: true,
-    wednesday: true,
-    thursday: true,
-    friday: true,
-    saturday: false,
-    sunday: false,
-  })
   const [file, setFile] = useState<File | null>(null)
   const [saving, setSaving] = useState<boolean>(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -143,7 +134,7 @@ export default function RoutesPage() {
             is_parking?: boolean
           }>
         | null = null
-      let activeDayFlags = { ...days }
+      let activeDayFlags = dayFlagsFromNumbers([])
 
       if (file) {
         fileName = file.name
@@ -423,22 +414,20 @@ export default function RoutesPage() {
                   onChange={e => setFile(e.target.files?.[0] ?? null)}
                   className="block w-full text-xs text-gray-600 dark:text-neutral-400"
                 />
-                <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">Required columns: timestamp, latitude, longitude. Optional: day_of_week, is_parking, address, notes.</p>
-              </div>
-              <div>
-                <div className="text-xs text-gray-600 dark:text-neutral-400 mb-1">Active days</div>
-                <div className="flex flex-wrap gap-2">
-                  {DAYS.map(d => (
-                    <label key={d.label} className="inline-flex items-center gap-2 text-xs text-gray-700 dark:text-gray-200">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(days[d.key])}
-                        onChange={e => setDays(prev => ({ ...prev, [d.key]: e.target.checked }))}
-                        className="h-4 w-4"
-                      />
-                      {d.label}
-                    </label>
-                  ))}
+                <div className="mt-2 rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800/40 p-3">
+                  <p className="text-[11px] font-semibold text-gray-700 dark:text-neutral-200">Excel requirements</p>
+                  <ul className="mt-1 space-y-1 text-[11px] text-gray-600 dark:text-neutral-400 list-disc pl-4">
+                    <li><span className="font-medium">timestamp</span> – ISO 8601 or <code>YYYY-MM-DD HH:MM:SS</code></li>
+                    <li><span className="font-medium">latitude</span> / <span className="font-medium">longitude</span> – decimal degrees (-90..90 / -180..180)</li>
+                    <li><span className="font-medium">day_of_week</span> – number 0 (Mon) → 6 (Sun) used to detect active days automatically</li>
+                    <li><span className="font-medium">is_parking</span> – optional boolean (TRUE/FALSE or 1/0)</li>
+                    <li><span className="font-medium">sequence</span> – optional order per day (defaults to row order if missing)</li>
+                    <li><span className="font-medium">address</span> – optional; used when coordinates are missing (will be geocoded)</li>
+                    <li><span className="font-medium">notes</span> – optional free text</li>
+                  </ul>
+                  <p className="mt-2 text-[11px] text-gray-500 dark:text-neutral-500">
+                    Active days are read from the <code>day_of_week</code> column—no manual selection needed.
+                  </p>
                 </div>
               </div>
               <div className="pt-2 flex items-center justify-end gap-2">

@@ -9,6 +9,8 @@ import { createClient } from '@/lib/supabase/client'
 import { toast } from 'react-hot-toast'
 import { axiosInstance } from '@/utils/axios'
 
+const MAX_WAYPOINTS_PER_ROUTE = 500
+
 type Vehicle = {
   id: string
   name: string
@@ -30,6 +32,7 @@ export default function Home() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [refreshMinutes, setRefreshMinutes] = useState<number>(10)
   const [appName, setAppName] = useState<string>('GPS Simulation Dashboard')
+  const [maintenanceMode, setMaintenanceMode] = useState<boolean>(false)
   const loadingRef = useRef<boolean>(false)
   const [focusId, setFocusId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(false)
@@ -40,7 +43,7 @@ export default function Home() {
     const { data, error } = await supabase
       .from('system_settings')
       .select('setting_key, setting_value')
-      .in('setting_key', ['map_refresh_interval_sec', 'app_name'])
+      .in('setting_key', ['map_refresh_interval_sec', 'app_name', 'maintenance_mode_enabled'])
     if (!error && data) {
       const secStr =
         data.find(d => d.setting_key === 'map_refresh_interval_sec')
@@ -55,8 +58,14 @@ export default function Home() {
       if (typeof name === 'string' && name.trim().length > 0) {
         setAppName(name)
       }
+      const maint =
+        data.find(d => d.setting_key === 'maintenance_mode_enabled')
+          ?.setting_value ?? 'false'
+      setMaintenanceMode(String(maint).toLowerCase() === 'true')
     }
   }, [])
+
+  const MAX_WAYPOINTS_PER_ROUTE = 500
 
   const loadData = useCallback(async () => {
     if (loadingRef.current) return
@@ -108,16 +117,23 @@ export default function Home() {
         setVehicles([])
         return
       }
-      // Fetch waypoints for these routes
+      const now = new Date()
+      const nowIso = now.toISOString()
+      const jsDay = now.getDay() // 0..6, 0=Sunday
+      const mondayZeroDay = (jsDay + 6) % 7 // 0..6, 0=Monday
+
+      // Fetch waypoints for these routes (filtered to active day)
       const { data: waypoints } = await supabase
         .from('waypoints')
-        .select('route_id, sequence_number, latitude, longitude, timestamp, day_of_week')
+        .select('route_id, sequence_number, latitude, longitude, timestamp, day_of_week, is_parking')
         .in('route_id', routeIds)
+        .eq('day_of_week', mondayZeroDay)
         .order('sequence_number', { ascending: true })
+        .limit(5000)
       // Group waypoints by route_id
       const routeIdToWaypoints = new Map<
         string,
-        Array<{ sequence: number; latitude: number; longitude: number; timestamp: string; day_of_week: number }>
+        Array<{ sequence: number; latitude: number; longitude: number; timestamp: string; day_of_week: number; is_parking?: boolean }>
       >()
       for (const w of waypoints ?? []) {
         // @ts-ignore
@@ -137,17 +153,16 @@ export default function Home() {
           timestamp: ts,
           // @ts-ignore
           day_of_week: (w.day_of_week ?? 0) as number,
+          // @ts-ignore
+          is_parking: Boolean(w.is_parking),
         })
       }
       // Prepare simulation batch request
-      const nowIso = new Date().toISOString()
-      const jsDay = new Date().getDay() // 0..6, 0=Sunday
-      const mondayZeroDay = (jsDay + 6) % 7 // 0..6, 0=Monday
       const vehiclesPayload = (vehiclesData ?? [])
         .map(v => {
           const routeInfo = vehicleIdToRoute[v.id]
           if (!routeInfo) return null
-          const wps = routeIdToWaypoints.get(routeInfo.id) ?? []
+          const wps = (routeIdToWaypoints.get(routeInfo.id) ?? []).slice(0, MAX_WAYPOINTS_PER_ROUTE)
           const flags = routeInfo.flags
           const isActiveToday =
             mondayZeroDay === 0 ? flags.monday :
@@ -206,7 +221,7 @@ export default function Home() {
       const compiled: Vehicle[] =
         (vehiclesData ?? []).map(v => {
           const routeInfo = vehicleIdToRoute[v.id]
-          const wps = routeInfo ? routeIdToWaypoints.get(routeInfo.id) ?? [] : []
+          const wps = routeInfo ? (routeIdToWaypoints.get(routeInfo.id) ?? []).slice(0, MAX_WAYPOINTS_PER_ROUTE) : []
           const pos = posByVehicle.get(v.id)
           let status: Vehicle['status'] = 'inactive'
           let lat: number | undefined
@@ -336,6 +351,22 @@ export default function Home() {
 
   function focusVehicle(id: string) {
     setFocusId(id)
+  }
+
+  if (maintenanceMode) {
+    return (
+      <AccessGate>
+        <div className="min-h-screen grid place-items-center bg-gradient-to-b from-gray-50 to-white dark:from-neutral-950 dark:to-neutral-900 p-4">
+          <div className="max-w-md text-center rounded-2xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-lg">
+            <p className="text-sm uppercase tracking-[0.2em] text-amber-500 font-semibold">Maintenance</p>
+            <h1 className="mt-2 text-xl font-semibold text-gray-900 dark:text-white">We&rsquo;ll be right back</h1>
+            <p className="mt-3 text-sm text-gray-600 dark:text-neutral-400">
+              The public dashboard is temporarily unavailable while admins perform maintenance. Please check back soon.
+            </p>
+          </div>
+        </div>
+      </AccessGate>
+    )
   }
 
   return (

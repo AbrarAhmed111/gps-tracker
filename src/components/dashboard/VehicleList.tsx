@@ -24,10 +24,10 @@ type VehicleListProps = {
   onFocus?: (id: string) => void
 }
 
-const statusStyles: Record<VehicleStatus, string> = {
-  moving: 'bg-blue-600',
-  parked: 'bg-amber-500',
-  inactive: 'bg-gray-400',
+const statusColors: Record<VehicleStatus, string> = {
+  moving: '#2563eb',
+  parked: '#f59e0b',
+  inactive: '#6b7280',
 }
 
 export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
@@ -56,19 +56,16 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
         <span className="text-xs text-gray-500">{open ? 'Hide' : 'Show'}</span>
       </button>
 
-      <div className="mt-3 flex items-center gap-2 text-xs text-gray-600 dark:text-neutral-400">
-        <span className="inline-flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-blue-600" />
-          Moving
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-amber-500" />
-          Parked
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-gray-400" />
-          Inactive
-        </span>
+      <div className="mt-3 flex items-center gap-3 text-xs text-gray-600 dark:text-neutral-400 flex-wrap">
+        {(['moving', 'parked', 'inactive'] as VehicleStatus[]).map(status => (
+          <span key={status} className="inline-flex items-center gap-1">
+            <span
+              className="h-2 w-2 rounded-full border border-white dark:border-neutral-900"
+              style={{ backgroundColor: statusColors[status] }}
+            />
+            {status.charAt(0).toUpperCase() + status.slice(1)}
+          </span>
+        ))}
       </div>
 
       {open && (
@@ -82,20 +79,24 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
                 <div className="flex items-center gap-2">
                   <span
                     className="h-2.5 w-2.5 rounded-full border border-white dark:border-neutral-900"
-                    style={{
-                      backgroundColor:
-                        v.color && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.color)
-                          ? v.color
-                          : v.status === 'moving'
-                            ? '#2563eb'
-                            : v.status === 'parked'
-                              ? '#f59e0b'
-                              : '#6b7280',
-                    }}
+                    style={{ backgroundColor: statusColors[v.status] }}
+                    title={`Status: ${v.status}`}
                   />
                   <p className="font-medium text-gray-900 dark:text-white">
                     {v.name}
                   </p>
+                  {v.color && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.color) && (
+                    <span
+                      className="ml-1 inline-flex items-center gap-1 rounded-full border border-gray-200 dark:border-neutral-800 px-1.5 py-0.5 text-[11px] text-gray-600 dark:text-neutral-400"
+                      title="Vehicle color"
+                    >
+                      <span
+                        className="h-2 w-2 rounded-full border border-white dark:border-neutral-900"
+                        style={{ backgroundColor: v.color }}
+                      />
+                      Color
+                    </span>
+                  )}
                 </div>
                 <button
                   onClick={() => onFocus?.(v.id)}
