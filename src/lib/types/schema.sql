@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS geocode_cache (
     latitude DECIMAL(10,8) NOT NULL,
     longitude DECIMAL(11,8) NOT NULL,
     formatted_address TEXT NULL,
+    raw JSONB NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     use_count INTEGER DEFAULT 1
 );

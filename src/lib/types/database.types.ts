@@ -75,6 +75,7 @@ export type Database = {
           id: string
           latitude: number
           longitude: number
+          raw: Json | null
           use_count: number | null
         }
         Insert: {
@@ -85,6 +86,7 @@ export type Database = {
           id?: string
           latitude: number
           longitude: number
+          raw?: Json | null
           use_count?: number | null
         }
         Update: {
@@ -95,6 +97,7 @@ export type Database = {
           id?: string
           latitude?: number
           longitude?: number
+          raw?: Json | null
           use_count?: number | null
         }
         Relationships: []
