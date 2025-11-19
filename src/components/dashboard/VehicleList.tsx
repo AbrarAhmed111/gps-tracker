@@ -25,13 +25,15 @@ type VehicleListProps = {
 }
 
 const statusColors: Record<VehicleStatus, string> = {
-  moving: '#2563eb',
+  moving: '#7ee600',
   parked: '#f59e0b',
   inactive: '#6b7280',
 }
 
 export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
   const [open, setOpen] = useState<boolean>(true)
+  const activeVehicles = vehicles.filter(v => v.status !== 'inactive')
+  const inactiveVehicles = vehicles.filter(v => v.status === 'inactive')
 
   return (
     <aside className="h-full flex flex-col">
@@ -70,7 +72,7 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
 
       {open && (
         <ul className="mt-3 space-y-2 overflow-auto">
-          {vehicles.map(v => (
+          {activeVehicles.map(v => (
             <li
               key={v.id}
               className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 hover:shadow-sm transition-shadow"
@@ -131,9 +133,7 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
                   {v.etaNextMinutes != null && (
                     <span>ETA next: {v.etaNextMinutes.toFixed(1)} min</span>
                   )}
-                  {v.lastUpdated && (
-                    <span>Last: {new Date(v.lastUpdated).toLocaleTimeString()}</span>
-                  )}
+                 
                 </div>
                 {typeof v.progressPercent === 'number' && (
                   <div className="mt-2">
@@ -151,7 +151,53 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
               </div>
             </li>
           ))}
+          {activeVehicles.length === 0 && (
+            <li className="rounded-lg border border-dashed border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 text-center text-xs text-gray-500 dark:text-neutral-400">
+              No active vehicles
+            </li>
+          )}
         </ul>
+      )}
+
+      {open && inactiveVehicles.length > 0 && (
+        <div className="mt-6 border-t border-gray-200 dark:border-neutral-800 pt-4 space-y-2">
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-neutral-400">
+            Inactive vehicles
+          </div>
+          <ul className="space-y-2">
+            {inactiveVehicles.map(v => (
+              <li
+                key={v.id}
+                className="rounded-lg border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 opacity-80 hover:opacity-100 transition"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full border border-white dark:border-neutral-900"
+                      style={{ backgroundColor: '#6b7280' }}
+                      title="Inactive"
+                    />
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      {v.name}
+                    </p>
+                  </div>
+                  <span className="text-[11px] text-gray-500 dark:text-neutral-400">Not visible on map</span>
+                </div>
+                <div className="mt-1 text-xs text-gray-600 dark:text-neutral-400">
+                  <p>Status: Inactive • Route: {v.routeLabel ?? '—'}</p>
+                  {typeof v.lat === 'number' && typeof v.lng === 'number' ? (
+                    <p>Last known pos: {v.lat.toFixed(4)}, {v.lng.toFixed(4)}</p>
+                  ) : (
+                    <p>Last known pos: —</p>
+                  )}
+                  <p className="text-[11px] text-gray-500 dark:text-neutral-500">
+                  No active route is currently scheduled for this vehicle.
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </aside>
   )

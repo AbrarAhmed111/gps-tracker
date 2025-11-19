@@ -21,7 +21,7 @@ export type VehicleMarker = {
 
 type MapViewProps = {
   vehicles: VehicleMarker[]
-  focusVehicleId?: string
+  focusRequest?: { id: string; ts: number }
 }
 
 declare global {
@@ -31,7 +31,7 @@ declare global {
   }
 }
 
-export default function MapView({ vehicles, focusVehicleId }: MapViewProps) {
+export default function MapView({ vehicles, focusRequest }: MapViewProps) {
   const [apiKey, setApiKey] = useState<string | null>(null)
   const mapRef = useRef<HTMLDivElement | null>(null)
   const mapInstanceRef = useRef<any>(null)
@@ -75,7 +75,7 @@ export default function MapView({ vehicles, focusVehicleId }: MapViewProps) {
       const iconColor =
         (v.color && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.color) ? v.color : null) ||
         (v.status === 'moving'
-          ? '#2563eb'
+          ? '#7ee600'
           : v.status === 'parked'
             ? '#f59e0b'
             : '#6b7280')
@@ -144,9 +144,9 @@ export default function MapView({ vehicles, focusVehicleId }: MapViewProps) {
   }, [vehicles, ready])
 
   useEffect(() => {
-    if (!ready || !mapInstanceRef.current || !focusVehicleId) return
+    if (!ready || !mapInstanceRef.current || !focusRequest?.id) return
     const map = mapInstanceRef.current
-    const marker = markersRef.current.get(focusVehicleId)
+    const marker = markersRef.current.get(focusRequest.id)
     if (marker) {
       const pos = marker.getPosition()
       if (pos) {
@@ -157,7 +157,7 @@ export default function MapView({ vehicles, focusVehicleId }: MapViewProps) {
         }
       }
     }
-  }, [focusVehicleId, ready])
+  }, [focusRequest, ready])
 
   useEffect(() => {
     if (apiKey) return

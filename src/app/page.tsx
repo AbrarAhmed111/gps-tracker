@@ -34,7 +34,7 @@ export default function Home() {
   const [appName, setAppName] = useState<string>('GPS Simulation Dashboard')
   const [maintenanceMode, setMaintenanceMode] = useState<boolean>(false)
   const loadingRef = useRef<boolean>(false)
-  const [focusId, setFocusId] = useState<string | null>(null)
+  const [focusRequest, setFocusRequest] = useState<{ id: string; ts: number } | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(false)
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
 
@@ -350,7 +350,7 @@ export default function Home() {
   )
 
   function focusVehicle(id: string) {
-    setFocusId(id)
+    setFocusRequest({ id, ts: Date.now() })
   }
 
   if (maintenanceMode) {
@@ -388,7 +388,7 @@ export default function Home() {
             </div>
             <div className="lg:col-span-8 h-[60vh] lg:h-[72vh]">
               <div className="h-full rounded-lg overflow-hidden border border-gray-200 dark:border-neutral-800 shadow-sm">
-                <MapView vehicles={vehiclesForMap} focusVehicleId={focusId || undefined} />
+                <MapView vehicles={vehiclesForMap} focusRequest={focusRequest || undefined} />
               </div>
             </div>
           </div>
