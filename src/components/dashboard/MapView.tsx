@@ -17,6 +17,8 @@ export type VehicleMarker = {
   vehicleNumber?: string
   vehicleType?: string
   bearing?: number
+  nextTarget?: { lat: number; lng: number }
+  etaToNextMs?: number
 }
 
 type MapViewProps = {
@@ -39,6 +41,27 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
   const infoWindowRef = useRef<any>(null)
   const [ready, setReady] = useState<boolean>(false)
   const fitRequestedRef = useRef<boolean>(false)
+  const animRef = useRef<number | null>(null)
+  const idlePhaseRef = useRef<Map<string, boolean>>(new Map())
+  const animStatesRef = useRef<Map<
+    string,
+    {
+      from: google.maps.LatLngLiteral
+      to: google.maps.LatLngLiteral
+      start: number
+      duration: number
+      base: google.maps.LatLngLiteral
+      drift: boolean
+      origin?: google.maps.LatLngLiteral
+    }
+  >>(new Map())
+  const vehiclesMapRef = useRef<Map<string, VehicleMarker>>(new Map())
+
+  useEffect(() => {
+    const map = new Map<string, VehicleMarker>()
+    vehicles.forEach(v => map.set(v.id, v))
+    vehiclesMapRef.current = map
+  }, [vehicles])
 
   const center = useMemo(() => {
     if (vehicles.length > 0) {
@@ -69,6 +92,8 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
     if (!ready || !mapInstanceRef.current) return
     const map = mapInstanceRef.current
     const seen = new Set<string>()
+    const now = performance.now()
+
     for (const v of vehicles) {
       seen.add(v.id)
       let marker = markersRef.current.get(v.id)
@@ -113,22 +138,74 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
           infoWindowRef.current.open({ anchor: marker, map })
         })
         markersRef.current.set(v.id, marker)
-      } else {
-        marker.setPosition({ lat: v.lat, lng: v.lng })
-        marker.setIcon({
-          path: window.google.maps.SymbolPath.CIRCLE,
-          fillColor: iconColor,
-          fillOpacity: 1,
-          strokeColor: '#ffffff',
-          strokeWeight: 2,
-          scale: 8,
-        })
       }
+
+      const prevAnim = animStatesRef.current.get(v.id)
+      const currentPos = marker!.getPosition()
+      const target = { lat: v.lat, lng: v.lng }
+      const shouldAnimate =
+        v.status === 'moving' &&
+        currentPos &&
+        (Math.abs(currentPos.lat() - target.lat) > 1e-6 ||
+          Math.abs(currentPos.lng() - target.lng) > 1e-6)
+
+      if (shouldAnimate) {
+        const duration = 2000
+        const fromPos = { lat: currentPos.lat(), lng: currentPos.lng() }
+        animStatesRef.current.set(v.id, {
+          from: fromPos,
+          to: target,
+          start: now,
+          duration,
+          base: target,
+          drift: false,
+          origin: fromPos,
+        })
+      } else if (v.status === 'moving' && v.nextTarget) {
+        const currentPosition = currentPos ? { lat: currentPos.lat(), lng: currentPos.lng() } : target
+        const duration = Math.max(4000, v.etaToNextMs ?? 4000)
+        animStatesRef.current.set(v.id, {
+          from: currentPosition,
+          to: v.nextTarget,
+          start: now,
+          duration,
+          base: v.nextTarget,
+          drift: false,
+          origin: currentPosition,
+        })
+      } else if (v.status === 'moving') {
+        const phase = idlePhaseRef.current.get(v.id) ?? false
+        idlePhaseRef.current.set(v.id, !phase)
+        const offsetLat = (phase ? 1 : -1) * 0.00005
+        const offsetLng = (phase ? -1 : 1) * 0.00005
+        animStatesRef.current.set(v.id, {
+          from: { lat: target.lat, lng: target.lng },
+          to: { lat: target.lat + offsetLat, lng: target.lng + offsetLng },
+          start: now,
+          duration: 6000,
+          base: target,
+          drift: true,
+        })
+      } else {
+        animStatesRef.current.delete(v.id)
+        marker!.setPosition(target)
+      }
+
+      marker!.setIcon({
+        path: window.google.maps.SymbolPath.CIRCLE,
+        fillColor: iconColor,
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeWeight: 2,
+        scale: 8,
+      })
     }
+
     markersRef.current.forEach((marker, id) => {
       if (!seen.has(id)) {
         marker.setMap(null)
         markersRef.current.delete(id)
+        animStatesRef.current.delete(id)
       }
     })
 
@@ -142,6 +219,63 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
       fitRequestedRef.current = true
     }
   }, [vehicles, ready])
+  useEffect(() => {
+    if (!ready) return
+    function frame(now: number) {
+      animStatesRef.current.forEach((state, id) => {
+        const marker = markersRef.current.get(id)
+        if (!marker) {
+          animStatesRef.current.delete(id)
+          return
+        }
+        const progress = Math.min(1, Math.max(0, (now - state.start) / state.duration))
+        const lat = state.from.lat + (state.to.lat - state.from.lat) * progress
+        const lng = state.from.lng + (state.to.lng - state.from.lng) * progress
+        marker.setPosition({ lat, lng })
+        if (progress >= 1) {
+          const vehicle = vehiclesMapRef.current.get(id)
+          if (state.drift) {
+            if (vehicle && vehicle.status === 'moving') {
+              const phase = idlePhaseRef.current.get(id) ?? false
+              idlePhaseRef.current.set(id, !phase)
+              const offsetLat = (phase ? 1 : -1) * 0.00005
+              const offsetLng = (phase ? -1 : 1) * 0.00005
+              state.from = state.to
+              state.to = {
+                lat: state.base.lat + offsetLat,
+                lng: state.base.lng + offsetLng,
+              }
+              state.start = now
+              state.duration = 6000
+            } else {
+              animStatesRef.current.delete(id)
+            }
+          } else if (vehicle && vehicle.status === 'moving' && state.origin) {
+            marker.setPosition(state.origin)
+            animStatesRef.current.set(id, {
+              from: state.origin,
+              to: state.base,
+              start: now,
+              duration: state.duration,
+              base: state.base,
+              drift: false,
+              origin: state.origin,
+            })
+          } else {
+            animStatesRef.current.delete(id)
+          }
+        }
+      })
+      animRef.current = requestAnimationFrame(frame)
+    }
+    animRef.current = requestAnimationFrame(frame)
+    return () => {
+      if (animRef.current != null) cancelAnimationFrame(animRef.current)
+      animRef.current = null
+      animStatesRef.current.clear()
+      idlePhaseRef.current.clear()
+    }
+  }, [ready])
 
   useEffect(() => {
     if (!ready || !mapInstanceRef.current || !focusRequest?.id) return

@@ -40,7 +40,32 @@ export default function RoutesPage() {
   const [showModal, setShowModal] = useState<boolean>(false)
   const [vehicleId, setVehicleId] = useState<string>('')
   const [routeName, setRouteName] = useState<string>('')
+  const [editingRoute, setEditingRoute] = useState<RouteRow | null>(null)
   const [file, setFile] = useState<File | null>(null)
+  function openCreateModal() {
+    setEditingRoute(null)
+    setVehicleId('')
+    setRouteName('')
+    setFile(null)
+    setShowModal(true)
+  }
+
+  function closeModal() {
+    setShowModal(false)
+    setEditingRoute(null)
+    setVehicleId('')
+    setRouteName('')
+    setFile(null)
+  }
+
+  function openEditRoute(route: RouteRow) {
+    setEditingRoute(route)
+    setVehicleId(route.vehicle_id)
+    setRouteName(route.route_name)
+    setFile(null)
+    setShowModal(true)
+  }
+
   const [saving, setSaving] = useState<boolean>(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -121,8 +146,28 @@ export default function RoutesPage() {
     try {
       setSaving(true)
       const supabase = createClient()
-      let fileName = 'manual'
-      let checksum = `manual-${crypto.randomUUID()}`
+
+      if (editingRoute && !file) {
+        toast.error('Upload the latest Excel file to update this route.')
+        setSaving(false)
+        return
+      }
+
+      if (!editingRoute || editingRoute.vehicle_id !== vehicleId) {
+        const existingRoute = await supabase
+          .from('routes')
+          .select('id, vehicle_id')
+          .eq('vehicle_id', vehicleId)
+          .maybeSingle()
+        if (existingRoute.data && existingRoute.data.id !== editingRoute?.id) {
+          toast.error('This vehicle already has a route. Deactivate or delete it before creating another.')
+          setSaving(false)
+          return
+        }
+      }
+
+      let fileName = editingRoute?.file_name || 'manual'
+      let checksum = editingRoute?.file_checksum || `manual-${crypto.randomUUID()}`
       let totalWaypoints = 0
       let parsedWaypoints:
         | Array<{
@@ -134,12 +179,21 @@ export default function RoutesPage() {
             is_parking?: boolean
           }>
         | null = null
-      let activeDayFlags = dayFlagsFromNumbers([])
+      let activeDayFlags = editingRoute
+        ? {
+            monday: !!editingRoute.monday,
+            tuesday: !!editingRoute.tuesday,
+            wednesday: !!editingRoute.wednesday,
+            thursday: !!editingRoute.thursday,
+            friday: !!editingRoute.friday,
+            saturday: !!editingRoute.saturday,
+            sunday: !!editingRoute.sunday,
+          }
+        : dayFlagsFromNumbers([])
 
       if (file) {
         fileName = file.name
         const fileContentB64 = await fileToBase64(file)
-        // Process via backend Excel processor
         if (!axiosInstance.defaults.baseURL) {
           throw new Error('Backend base URL not configured. Set NEXT_PUBLIC_BACKEND_BASE_URL.')
         }
@@ -180,7 +234,6 @@ export default function RoutesPage() {
         parsedWaypoints = items
       }
 
-      // Keep only waypoints with valid coordinates
       const validWaypoints =
         (parsedWaypoints ?? []).filter(
           w =>
@@ -189,10 +242,9 @@ export default function RoutesPage() {
             Number.isFinite(w.latitude) &&
             Number.isFinite(w.longitude),
         )
-      // Adjust total to reflect stored rows
       totalWaypoints = validWaypoints.length
 
-      const insertRoute = {
+      const baseRoute = {
         vehicle_id: vehicleId,
         route_name: routeName.trim(),
         file_name: fileName,
@@ -207,15 +259,26 @@ export default function RoutesPage() {
         saturday: activeDayFlags.saturday,
         sunday: activeDayFlags.sunday,
       }
-      const { data: routeIns, error: rErr } = await supabase
-        .from('routes')
-        .insert([insertRoute])
-        .select('id')
-        .maybeSingle()
-      if (rErr) throw rErr
-      const routeId = routeIns?.id as string
+
+      let routeId = editingRoute?.id
+      if (editingRoute) {
+        const { error: updateErr } = await supabase.from('routes').update(baseRoute).eq('id', editingRoute.id)
+        if (updateErr) throw updateErr
+        const { error: deleteErr } = await supabase.from('waypoints').delete().eq('route_id', editingRoute.id)
+        if (deleteErr) throw deleteErr
+      } else {
+        const { data: routeIns, error: rErr } = await supabase
+          .from('routes')
+          .insert([baseRoute])
+          .select('id')
+          .maybeSingle()
+        if (rErr) throw rErr
+        routeId = routeIns?.id as string
+      }
+
+      if (!routeId) throw new Error('Route ID missing after save')
+
       if (validWaypoints && validWaypoints.length > 0) {
-        // batch insert in chunks of 1k
         const batches = []
         for (let i = 0; i < validWaypoints.length; i += 1000) {
           const chunk = validWaypoints.slice(i, i + 1000).map(wp => ({
@@ -223,21 +286,19 @@ export default function RoutesPage() {
             sequence_number: wp.sequence_number,
             latitude: wp.latitude ?? null,
             longitude: wp.longitude ?? null,
-            // Ensure timestamp is non-null due to NOT NULL constraint
             timestamp: wp.timestamp ? new Date(wp.timestamp).toISOString() : new Date().toISOString(),
             day_of_week: typeof wp.day_of_week === 'number' ? wp.day_of_week : 0,
           }))
-          batches.push(
-            supabase.from('waypoints').insert(chunk),
-          )
+          batches.push(supabase.from('waypoints').insert(chunk))
         }
         for (const b of batches) {
           const { error } = await b
           if (error) throw error
         }
       }
-      toast.success('Route created')
-      // refresh
+
+      toast.success(editingRoute ? 'Route updated' : 'Route created')
+
       const { data } = await supabase
         .from('routes')
         .select(
@@ -245,13 +306,10 @@ export default function RoutesPage() {
         )
         .order('created_at', { ascending: false })
       setRoutes((data as any) ?? [])
-      // reset
-      setShowModal(false)
-      setVehicleId('')
-      setRouteName('')
-      setFile(null)
+
+      closeModal()
     } catch (e: any) {
-      toast.error(e?.message || 'Failed to create route')
+      toast.error(e?.message || (editingRoute ? 'Failed to update route' : 'Failed to create route'))
     } finally {
       setSaving(false)
     }
@@ -300,7 +358,7 @@ export default function RoutesPage() {
             className="hidden sm:block w-56 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-1.5 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           />
           <button
-            onClick={() => setShowModal(true)}
+            onClick={openCreateModal}
             className="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-sm shadow-sm"
           >
             Add / Upload
@@ -349,6 +407,12 @@ export default function RoutesPage() {
               </div>
               <div className="mt-4 flex items-center gap-2">
                 <button
+                  onClick={() => openEditRoute(r)}
+                  className="text-xs px-2 py-1 rounded-md border border-gray-300 dark:border-neutral-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                >
+                  Edit
+                </button>
+                <button
                   onClick={() => toggleActive(r.id, r.is_active)}
                   className="text-xs px-2 py-1 rounded-md border border-gray-300 dark:border-neutral-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-neutral-800"
                 >
@@ -374,9 +438,11 @@ export default function RoutesPage() {
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 shadow-lg">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-gray-900 dark:text-white">Add / Upload Route</h3>
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white">
+                {editingRoute ? 'Edit route' : 'Add / Upload Route'}
+              </h3>
               <button
-                onClick={() => setShowModal(false)}
+                onClick={closeModal}
                 className="text-xs px-2 py-1 rounded-md border border-gray-300 dark:border-neutral-700 text-gray-800 dark:text-gray-200"
               >
                 Close
@@ -413,6 +479,7 @@ export default function RoutesPage() {
                   accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                   onChange={e => setFile(e.target.files?.[0] ?? null)}
                   className="block w-full text-xs text-gray-600 dark:text-neutral-400"
+                  required={Boolean(editingRoute)}
                 />
                 <div className="mt-2 rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800/40 p-3">
                   <p className="text-[11px] font-semibold text-gray-700 dark:text-neutral-200">Excel requirements</p>
@@ -428,11 +495,16 @@ export default function RoutesPage() {
                   <p className="mt-2 text-[11px] text-gray-500 dark:text-neutral-500">
                     Active days are read from the <code>day_of_week</code> column—no manual selection needed.
                   </p>
+                  {editingRoute && (
+                    <p className="mt-1 text-[11px] text-blue-600 dark:text-blue-300">
+                      Re-upload the updated Excel file to replace the current waypoints.
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
-                  onClick={() => setShowModal(false)}
+                  onClick={closeModal}
                   className="text-xs px-3 py-1.5 rounded-md border border-gray-300 dark:border-neutral-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-neutral-800"
                 >
                   Cancel
@@ -442,7 +514,7 @@ export default function RoutesPage() {
                   disabled={saving}
                   className="text-xs px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white shadow-sm"
                 >
-                  {saving ? 'Saving…' : 'Create'}
+                  {saving ? 'Saving…' : editingRoute ? 'Update' : 'Create'}
                 </button>
               </div>
             </div>

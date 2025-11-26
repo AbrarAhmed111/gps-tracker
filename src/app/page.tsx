@@ -26,6 +26,8 @@ type Vehicle = {
   vehicleNumber?: string
   vehicleType?: string
   bearing?: number
+  nextTarget?: { lat: number; lng: number } | null
+  etaToNextMs?: number | null
 }
 
 export default function Home() {
@@ -230,6 +232,8 @@ export default function Home() {
           let etaNextMinutes: number | undefined
           let progressPercent: number | undefined
           let bearingDeg: number | undefined
+          let nextTarget: { lat: number; lng: number } | null = null
+          let etaToNextMs: number | null = null
           if (pos) {
             const s = (pos.status || '').toString().toLowerCase()
             if (s === 'parked' || s === 'completed' || s === 'not_started') status = 'parked'
@@ -256,10 +260,19 @@ export default function Home() {
             const eta = pos.eta
             if (eta && typeof eta.minutes_to_next_waypoint === 'number') {
               etaNextMinutes = eta.minutes_to_next_waypoint
+              etaToNextMs = etaNextMinutes * 60 * 1000
             }
             const prog = pos.route_progress
             if (prog && typeof prog.overall_progress_percent === 'number') {
               progressPercent = prog.overall_progress_percent
+            }
+            const currentSeg = prog?.current_segment
+            const segTo = currentSeg?.to_position
+            if (segTo && typeof segTo.latitude === 'number' && typeof segTo.longitude === 'number') {
+              nextTarget = {
+                lat: segTo.latitude,
+                lng: segTo.longitude,
+              }
             }
           }
           // If simulation did not return a position but route has waypoints, fall back to first waypoint
@@ -298,6 +311,8 @@ export default function Home() {
             // @ts-ignore
             vehicleType: v.vehicle_type || undefined,
             bearing: bearingDeg,
+            nextTarget,
+            etaToNextMs,
           }
         }) ?? []
       setVehicles(compiled)
@@ -345,6 +360,8 @@ export default function Home() {
           vehicleNumber: v.vehicleNumber,
           vehicleType: v.vehicleType,
           bearing: v.bearing,
+          nextTarget: v.nextTarget ?? undefined,
+          etaToNextMs: v.etaToNextMs ?? undefined,
         })),
     [vehicles],
   )

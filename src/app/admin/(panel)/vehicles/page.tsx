@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'react-hot-toast'
 
@@ -19,6 +19,7 @@ export default function VehiclesPage() {
   const [loading, setLoading] = useState<boolean>(true)
   const [search, setSearch] = useState<string>('')
   const [showModal, setShowModal] = useState<boolean>(false)
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [name, setName] = useState<string>('')
   const [number, setNumber] = useState<string>('')
   const [type, setType] = useState<string>('')
@@ -26,6 +27,40 @@ export default function VehiclesPage() {
   const [active, setActive] = useState<boolean>(true)
   const [saving, setSaving] = useState<boolean>(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [routeAttached, setRouteAttached] = useState<Record<string, boolean>>({})
+
+  const loadVehicles = useCallback(async () => {
+    setLoading(true)
+    const supabase = createClient()
+    const [vehiclesRes, routesRes] = await Promise.all([
+      supabase
+        .from('vehicles')
+        .select('id, name, vehicle_number, vehicle_type, color, is_active, created_at')
+        .order('created_at', { ascending: false }),
+      supabase.from('routes').select('vehicle_id'),
+    ])
+
+    if (vehiclesRes.error) {
+      toast.error('Failed to load vehicles')
+      setVehicles([])
+    } else {
+      setVehicles((vehiclesRes.data as any) ?? [])
+    }
+
+    if (routesRes.error) {
+      toast.error('Failed to load route info')
+      setRouteAttached({})
+    } else {
+      const attachmentMap: Record<string, boolean> = {}
+      ;(routesRes.data as Array<{ vehicle_id: string }> | null)?.forEach(row => {
+        if (row?.vehicle_id) {
+          attachmentMap[row.vehicle_id] = true
+        }
+      })
+      setRouteAttached(attachmentMap)
+    }
+    setLoading(false)
+  }, [])
 
   const filtered = useMemo(() => {
     if (!search) return vehicles
@@ -39,31 +74,10 @@ export default function VehiclesPage() {
   }, [vehicles, search])
 
   useEffect(() => {
-    let active = true
-    async function load() {
-      setLoading(true)
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('vehicles')
-        .select(
-          'id, name, vehicle_number, vehicle_type, color, is_active, created_at',
-        )
-        .order('created_at', { ascending: false })
-      if (!active) return
-      if (error) {
-        toast.error('Failed to load vehicles')
-      } else {
-        setVehicles((data as any) ?? [])
-      }
-      setLoading(false)
-    }
-    load()
-    return () => {
-      active = false
-    }
-  }, [])
+    loadVehicles()
+  }, [loadVehicles])
 
-  async function addVehicle() {
+  async function addOrUpdateVehicle() {
     if (!name.trim()) {
       toast.error('Name is required')
       return
@@ -72,26 +86,35 @@ export default function VehiclesPage() {
       setSaving(true)
       const supabase = createClient()
       const { data: userRes } = await supabase.auth.getUser()
-      const { error } = await supabase.from('vehicles').insert([
-        {
-          name: name.trim(),
-          vehicle_number: number || null,
-          vehicle_type: type || null,
-          color: color || '#000000',
-          is_active: active,
-          created_by: userRes.user?.id ?? null,
-        },
-      ])
-      if (error) throw error
-      toast.success('Vehicle added')
-      // refresh
-      const { data } = await supabase
-        .from('vehicles')
-        .select(
-          'id, name, vehicle_number, vehicle_type, color, is_active, created_at',
-        )
-        .order('created_at', { ascending: false })
-      setVehicles((data as any) ?? [])
+
+      if (editingVehicle) {
+        const { error } = await supabase
+          .from('vehicles')
+          .update({
+            name: name.trim(),
+            vehicle_number: number || null,
+            vehicle_type: type || null,
+            color: color || '#000000',
+            is_active: active,
+          })
+          .eq('id', editingVehicle.id)
+        if (error) throw error
+        toast.success('Vehicle updated')
+      } else {
+        const { error } = await supabase.from('vehicles').insert([
+          {
+            name: name.trim(),
+            vehicle_number: number || null,
+            vehicle_type: type || null,
+            color: color || '#000000',
+            is_active: active,
+            created_by: userRes.user?.id ?? null,
+          },
+        ])
+        if (error) throw error
+        toast.success('Vehicle added')
+      }
+      await loadVehicles()
       setShowModal(false)
       setName('')
       setNumber('')
@@ -113,7 +136,7 @@ export default function VehiclesPage() {
       const { error } = await supabase.from('vehicles').delete().eq('id', id)
       if (error) throw error
       toast.success('Vehicle deleted')
-      setVehicles(vs => vs.filter(v => v.id !== id))
+      await loadVehicles()
     } catch (e: any) {
       toast.error(e?.message || 'Failed to delete vehicle')
     } finally {
@@ -166,6 +189,7 @@ export default function VehiclesPage() {
               <th className="text-left px-4 py-2 font-medium">Name</th>
               <th className="text-left px-4 py-2 font-medium">Number</th>
               <th className="text-left px-4 py-2 font-medium">Type</th>
+              <th className="text-left px-4 py-2 font-medium">Route</th>
               <th className="text-left px-4 py-2 font-medium">Color</th>
               <th className="text-left px-4 py-2 font-medium">Active</th>
               <th className="text-left px-4 py-2 font-medium">Created</th>
@@ -176,7 +200,7 @@ export default function VehiclesPage() {
             {loading ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={8}
                   className="px-4 py-6 text-center text-gray-500 dark:text-neutral-400"
                 >
                   Loading…
@@ -185,7 +209,7 @@ export default function VehiclesPage() {
             ) : filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={8}
                   className="px-4 py-6 text-center text-gray-500 dark:text-neutral-400"
                 >
                   No vehicles
@@ -205,6 +229,17 @@ export default function VehiclesPage() {
                   </td>
                   <td className="px-4 py-2 text-gray-700 dark:text-gray-200">
                     {v.vehicle_type ?? '—'}
+                  </td>
+                  <td className="px-4 py-2">
+                    {routeAttached[v.id] ? (
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                        Attached
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs bg-gray-100 text-gray-600 dark:bg-neutral-800 dark:text-gray-300">
+                        Not
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-gray-700 dark:text-gray-200">
                     <span
@@ -228,13 +263,29 @@ export default function VehiclesPage() {
                       : '—'}
                   </td>
                   <td className="px-4 py-2 text-right">
-                    <button
-                      onClick={() => deleteVehicle(v.id)}
-                      disabled={deletingId === v.id}
-                      className="text-xs px-2 py-1 rounded-md border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950/20 disabled:opacity-60"
-                    >
-                      {deletingId === v.id ? 'Deleting…' : 'Delete'}
-                    </button>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    onClick={() => {
+                      setEditingVehicle(v)
+                      setName(v.name)
+                      setNumber(v.vehicle_number ?? '')
+                      setType(v.vehicle_type ?? '')
+                      setColor(v.color ?? '#000000')
+                      setActive(Boolean(v.is_active))
+                      setShowModal(true)
+                    }}
+                    className="text-xs px-2 py-1 rounded-md border border-gray-300 dark:border-neutral-700 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-neutral-800"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => deleteVehicle(v.id)}
+                    disabled={deletingId === v.id}
+                    className="text-xs px-2 py-1 rounded-md border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950/20 disabled:opacity-60"
+                  >
+                    {deletingId === v.id ? 'Deleting…' : 'Delete'}
+                  </button>
+                </div>
                   </td>
                 </tr>
               ))
@@ -248,7 +299,7 @@ export default function VehiclesPage() {
           <div className="w-full max-w-md rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 shadow-lg">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium text-gray-900 dark:text-white">
-                Add vehicle
+                {editingVehicle ? 'Edit vehicle' : 'Add vehicle'}
               </h3>
               <button
                 onClick={() => setShowModal(false)}
@@ -324,11 +375,11 @@ export default function VehiclesPage() {
                   Cancel
                 </button>
                 <button
-                  onClick={addVehicle}
+                  onClick={addOrUpdateVehicle}
                   disabled={saving}
                   className="text-xs px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white shadow-sm"
                 >
-                  {saving ? 'Adding…' : 'Add'}
+                  {saving ? (editingVehicle ? 'Saving…' : 'Adding…') : editingVehicle ? 'Save' : 'Add'}
                 </button>
               </div>
             </div>
