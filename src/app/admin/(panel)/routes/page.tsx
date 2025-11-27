@@ -20,6 +20,8 @@ type RouteRow = {
   saturday: boolean | null
   sunday: boolean | null
   created_at: string | null
+  file_name?: string | null
+  file_checksum?: string | null
 }
 
 const DAYS: Array<{ key: keyof RouteRow; label: string }> = [
@@ -88,7 +90,7 @@ export default function RoutesPage() {
         supabase
           .from('routes')
           .select(
-            'id, route_name, vehicle_id, total_waypoints, is_active, monday, tuesday, wednesday, thursday, friday, saturday, sunday, created_at',
+            'id, route_name, vehicle_id, total_waypoints, is_active, monday, tuesday, wednesday, thursday, friday, saturday, sunday, created_at, file_name, file_checksum',
           )
           .order('created_at', { ascending: false }),
       ])
@@ -302,7 +304,7 @@ export default function RoutesPage() {
       const { data } = await supabase
         .from('routes')
         .select(
-          'id, route_name, vehicle_id, total_waypoints, is_active, monday, tuesday, wednesday, thursday, friday, saturday, sunday, created_at',
+          'id, route_name, vehicle_id, total_waypoints, is_active, monday, tuesday, wednesday, thursday, friday, saturday, sunday, created_at, file_name, file_checksum',
         )
         .order('created_at', { ascending: false })
       setRoutes((data as any) ?? [])
