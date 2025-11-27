@@ -46,13 +46,13 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
   const animStatesRef = useRef<Map<
     string,
     {
-      from: google.maps.LatLngLiteral
-      to: google.maps.LatLngLiteral
+      from: { lat: number; lng: number }
+      to: { lat: number; lng: number }
       start: number
       duration: number
-      base: google.maps.LatLngLiteral
+      base: { lat: number; lng: number }
       drift: boolean
-      origin?: google.maps.LatLngLiteral
+      origin?: { lat: number; lng: number }
     }
   >>(new Map())
   const vehiclesMapRef = useRef<Map<string, VehicleMarker>>(new Map())
