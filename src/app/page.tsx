@@ -260,7 +260,7 @@ export default function Home() {
             const eta = pos.eta
             if (eta && typeof eta.minutes_to_next_waypoint === 'number') {
               etaNextMinutes = eta.minutes_to_next_waypoint
-              etaToNextMs = etaNextMinutes * 60 * 1000
+              etaToNextMs = eta.minutes_to_next_waypoint * 60 * 1000
             }
             const prog = pos.route_progress
             if (prog && typeof prog.overall_progress_percent === 'number') {
