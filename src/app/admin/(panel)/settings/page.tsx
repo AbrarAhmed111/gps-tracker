@@ -148,7 +148,7 @@ export default function SettingsPage() {
             type="text"
             value={appName}
             onChange={e => setAppName(e.target.value)}
-            placeholder="GPS Simulation Dashboard"
+            placeholder="GPS Tracking Dashboard"
             disabled={loading}
             className="flex-1 rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 text-sm"
           />

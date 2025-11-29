@@ -13,7 +13,7 @@ type HeaderProps = {
 }
 
 export default function Header({
-  title = 'GPS Simulation Dashboard',
+  title = 'GPS Tracking Dashboard',
   refreshMinutes = 10,
   onManualRefresh,
   lastSyncedAt,
@@ -88,7 +88,7 @@ export default function Header({
               </span>
               <span className="hidden sm:inline text-gray-400">•</span>
               <span className="hidden sm:inline">
-                {loading ? 'Syncing…' : 'Live simulation'}
+                {loading ? 'Syncing…' : 'Live feed'}
               </span>
               {lastSyncedAt && (
                 <>

@@ -34,7 +34,7 @@ type Vehicle = {
 export default function Home() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [refreshMinutes, setRefreshMinutes] = useState<number>(10)
-  const [appName, setAppName] = useState<string>('GPS Simulation Dashboard')
+  const [appName, setAppName] = useState<string>('GPS Tracking Dashboard')
   const [maintenanceMode, setMaintenanceMode] = useState<boolean>(false)
   const loadingRef = useRef<boolean>(false)
   const [focusRequest, setFocusRequest] = useState<{ id: string; ts: number } | null>(null)
@@ -57,7 +57,7 @@ export default function Home() {
       }
       const name =
         data.find(d => d.setting_key === 'app_name')?.setting_value ??
-        'GPS Simulation Dashboard'
+        'GPS Tracking Dashboard'
       if (typeof name === 'string' && name.trim().length > 0) {
         setAppName(name)
       }
@@ -299,7 +299,7 @@ export default function Home() {
             ? (routeIdToWaypoints.get(routeInfo.id) ?? []).map(wp => ({
                 lat: wp.latitude,
                 lng: wp.longitude,
-                sequence: wp.sequence_number,
+                sequence: wp.sequence,
               }))
             : undefined
 
