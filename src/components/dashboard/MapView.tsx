@@ -19,6 +19,7 @@ export type VehicleMarker = {
   bearing?: number
   nextTarget?: { lat: number; lng: number }
   etaToNextMs?: number
+  waypoints?: Array<{ lat: number; lng: number; sequence: number }>
 }
 
 type MapViewProps = {
@@ -56,6 +57,77 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
     }
   >>(new Map())
   const vehiclesMapRef = useRef<Map<string, VehicleMarker>>(new Map())
+  const simulatedPositionsRef = useRef<Map<string, { lat: number; lng: number; timestamp: number }>>(new Map())
+  const waypointSequencesRef = useRef<Map<string, number>>(new Map()) // Track current waypoint sequence
+
+  // Haversine distance calculation (in kilometers)
+  const haversineDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371 // Earth's radius in kilometers
+    const dLat = ((lat2 - lat1) * Math.PI) / 180
+    const dLng = ((lng2 - lng1) * Math.PI) / 180
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return R * c
+  }
+
+  // Calculate animation duration based on distance and speed
+  const calculateAnimationDuration = (
+    from: { lat: number; lng: number },
+    to: { lat: number; lng: number },
+    speedKmh?: number
+  ): number => {
+    const distanceKm = haversineDistance(from.lat, from.lng, to.lat, to.lng)
+    // Use vehicle speed if available, otherwise default to 30 km/h for smooth animation
+    const effectiveSpeed = speedKmh && speedKmh > 0 ? speedKmh : 30
+    // Calculate time in milliseconds: (distance / speed) * 3600000 (hours to ms)
+    const timeMs = (distanceKm / effectiveSpeed) * 3600000
+    // Ensure minimum duration of 2 seconds and maximum of 5 minutes for smooth animation
+    return Math.max(2000, Math.min(300000, timeMs))
+  }
+
+  // Find next waypoint in sequence
+  const findNextWaypoint = (
+    vehicle: VehicleMarker,
+    currentTarget: { lat: number; lng: number }
+  ): { lat: number; lng: number } | null => {
+    if (!vehicle.waypoints || vehicle.waypoints.length === 0) return null
+    
+    // Find current waypoint index
+    let currentIndex = -1
+    for (let i = 0; i < vehicle.waypoints.length; i++) {
+      const wp = vehicle.waypoints[i]
+      const dist = haversineDistance(currentTarget.lat, currentTarget.lng, wp.lat, wp.lng)
+      if (dist < 0.01) { // Within 10 meters, consider it the same waypoint
+        currentIndex = i
+        break
+      }
+    }
+    
+    // If not found, find closest waypoint
+    if (currentIndex === -1) {
+      let minDist = Infinity
+      for (let i = 0; i < vehicle.waypoints.length; i++) {
+        const wp = vehicle.waypoints[i]
+        const dist = haversineDistance(currentTarget.lat, currentTarget.lng, wp.lat, wp.lng)
+        if (dist < minDist) {
+          minDist = dist
+          currentIndex = i
+        }
+      }
+    }
+    
+    // Return next waypoint in sequence
+    if (currentIndex >= 0 && currentIndex < vehicle.waypoints.length - 1) {
+      return {
+        lat: vehicle.waypoints[currentIndex + 1].lat,
+        lng: vehicle.waypoints[currentIndex + 1].lng,
+      }
+    }
+    
+    return null
+  }
 
   useEffect(() => {
     const map = new Map<string, VehicleMarker>()
@@ -143,6 +215,16 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
       const prevAnim = animStatesRef.current.get(v.id)
       const currentPos = marker!.getPosition()
       const target = { lat: v.lat, lng: v.lng }
+      
+      // Update simulated position when API provides new position
+      if (v.lastUpdated) {
+        simulatedPositionsRef.current.set(v.id, {
+          lat: target.lat,
+          lng: target.lng,
+          timestamp: now,
+        })
+      }
+      
       const shouldAnimate =
         v.status === 'moving' &&
         currentPos &&
@@ -150,6 +232,7 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
           Math.abs(currentPos.lng() - target.lng) > 1e-6)
 
       if (shouldAnimate) {
+        // Smooth transition to API-provided position
         const duration = 2000
         const fromPos = { lat: currentPos.lat(), lng: currentPos.lng() }
         animStatesRef.current.set(v.id, {
@@ -161,11 +244,16 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
           drift: false,
           origin: fromPos,
         })
+        // Update simulated position
+        simulatedPositionsRef.current.set(v.id, {
+          lat: target.lat,
+          lng: target.lng,
+          timestamp: now,
+        })
       } else if (v.status === 'moving' && v.nextTarget) {
+        // Use API-provided nextTarget with calculated duration
         const currentPosition = currentPos ? { lat: currentPos.lat(), lng: currentPos.lng() } : target
-        // Make animation very slow when no API is hitting (multiply by 10 for very slow movement)
-        const baseDuration = v.etaToNextMs ?? 60000 // Default to 60 seconds if no ETA
-        const duration = Math.max(60000, baseDuration * 10) // Multiply by 10 to make it very slow
+        const duration = calculateAnimationDuration(currentPosition, v.nextTarget, v.speedKmh)
         animStatesRef.current.set(v.id, {
           from: currentPosition,
           to: v.nextTarget,
@@ -175,7 +263,45 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
           drift: false,
           origin: currentPosition,
         })
+      } else if (v.status === 'moving' && v.waypoints && v.waypoints.length > 0) {
+        // No API target, but we have waypoints - calculate next waypoint dynamically
+        const simPos = simulatedPositionsRef.current.get(v.id)
+        const currentPosition = currentPos
+          ? { lat: currentPos.lat(), lng: currentPos.lng() }
+          : simPos
+          ? { lat: simPos.lat, lng: simPos.lng }
+          : target
+        
+        // Find next waypoint in sequence
+        const nextWp = findNextWaypoint(v, currentPosition)
+        if (nextWp) {
+          const duration = calculateAnimationDuration(currentPosition, nextWp, v.speedKmh)
+          animStatesRef.current.set(v.id, {
+            from: currentPosition,
+            to: nextWp,
+            start: now,
+            duration,
+            base: nextWp,
+            drift: false,
+            origin: currentPosition,
+          })
+        } else {
+          // No next waypoint found, start drift
+          const phase = idlePhaseRef.current.get(v.id) ?? false
+          idlePhaseRef.current.set(v.id, !phase)
+          const offsetLat = (phase ? 1 : -1) * 0.00005
+          const offsetLng = (phase ? -1 : 1) * 0.00005
+          animStatesRef.current.set(v.id, {
+            from: { lat: target.lat, lng: target.lng },
+            to: { lat: target.lat + offsetLat, lng: target.lng + offsetLng },
+            start: now,
+            duration: 12000, // Slower drift animation
+            base: target,
+            drift: true,
+          })
+        }
       } else if (v.status === 'moving') {
+        // No waypoints available, start drift
         const phase = idlePhaseRef.current.get(v.id) ?? false
         idlePhaseRef.current.set(v.id, !phase)
         const offsetLat = (phase ? 1 : -1) * 0.00005
@@ -184,7 +310,7 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
           from: { lat: target.lat, lng: target.lng },
           to: { lat: target.lat + offsetLat, lng: target.lng + offsetLng },
           start: now,
-          duration: 12000, // Slower drift animation (doubled from 6000)
+          duration: 12000,
           base: target,
           drift: true,
         })
@@ -234,6 +360,14 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
         const lat = state.from.lat + (state.to.lat - state.from.lat) * progress
         const lng = state.from.lng + (state.to.lng - state.from.lng) * progress
         marker.setPosition({ lat, lng })
+        
+        // Update simulated position continuously for accurate tracking
+        simulatedPositionsRef.current.set(id, {
+          lat,
+          lng,
+          timestamp: now,
+        })
+        
         if (progress >= 1) {
           const vehicle = vehiclesMapRef.current.get(id)
           if (state.drift) {
@@ -248,23 +382,46 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
                 lng: state.base.lng + offsetLng,
               }
               state.start = now
-              state.duration = 12000 // Slower drift animation (doubled from 6000)
+              state.duration = 18000 // Slower drift animation
             } else {
               animStatesRef.current.delete(id)
             }
-          } else if (vehicle && vehicle.status === 'moving' && state.origin) {
-            marker.setPosition(state.origin)
-            // Make the restart animation very slow (multiply original duration by 10)
-            const slowDuration = state.duration * 10
-            animStatesRef.current.set(id, {
-              from: state.origin,
-              to: state.base,
-              start: now,
-              duration: slowDuration,
-              base: state.base,
-              drift: false,
-              origin: state.origin,
-            })
+          } else if (vehicle && vehicle.status === 'moving') {
+            // Animation completed - move to next waypoint
+            const currentSimPos = simulatedPositionsRef.current.get(id)
+            const currentPosition = currentSimPos
+              ? { lat: currentSimPos.lat, lng: currentSimPos.lng }
+              : { lat: state.to.lat, lng: state.to.lng }
+            
+            // Try to find next waypoint
+            const nextWp = vehicle.nextTarget || (vehicle.waypoints ? findNextWaypoint(vehicle, state.to) : null)
+            
+            if (nextWp) {
+              const duration = calculateAnimationDuration(currentPosition, nextWp, vehicle.speedKmh)
+              animStatesRef.current.set(id, {
+                from: currentPosition,
+                to: nextWp,
+                start: now,
+                duration,
+                base: nextWp,
+                drift: false,
+                origin: currentPosition,
+              })
+            } else {
+              // No more waypoints, start drift
+              const phase = idlePhaseRef.current.get(id) ?? false
+              idlePhaseRef.current.set(id, !phase)
+              const offsetLat = (phase ? 1 : -1) * 0.00005
+              const offsetLng = (phase ? -1 : 1) * 0.00005
+              animStatesRef.current.set(id, {
+                from: currentPosition,
+                to: { lat: currentPosition.lat + offsetLat, lng: currentPosition.lng + offsetLng },
+                start: now,
+                duration: 18000,
+                base: currentPosition,
+                drift: true,
+              })
+            }
           } else {
             animStatesRef.current.delete(id)
           }

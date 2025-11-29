@@ -28,6 +28,7 @@ type Vehicle = {
   bearing?: number
   nextTarget?: { lat: number; lng: number } | null
   etaToNextMs?: number | null
+  waypoints?: Array<{ lat: number; lng: number; sequence: number }>
 }
 
 export default function Home() {
@@ -293,6 +294,15 @@ export default function Home() {
               else if (st.active) status = 'moving'
             }
           }
+          // Get waypoints for this vehicle's route
+          const vehicleWaypoints = routeInfo
+            ? (routeIdToWaypoints.get(routeInfo.id) ?? []).map(wp => ({
+                lat: wp.latitude,
+                lng: wp.longitude,
+                sequence: wp.sequence_number,
+              }))
+            : undefined
+
           return {
             id: v.id,
             name: v.name,
@@ -313,6 +323,7 @@ export default function Home() {
             bearing: bearingDeg,
             nextTarget,
             etaToNextMs,
+            waypoints: vehicleWaypoints,
           }
         }) ?? []
       setVehicles(compiled)
@@ -362,6 +373,7 @@ export default function Home() {
           bearing: v.bearing,
           nextTarget: v.nextTarget ?? undefined,
           etaToNextMs: v.etaToNextMs ?? undefined,
+          waypoints: v.waypoints,
         })),
     [vehicles],
   )
