@@ -217,6 +217,7 @@ export default function RoutesPage() {
           timestamp: string | null
           day_of_week: number
           is_parking?: boolean
+          original_address?: string | null
         }> = []
         Object.keys(byDay).forEach(k => {
           const dNum = Number(k)
@@ -229,21 +230,93 @@ export default function RoutesPage() {
               timestamp: w.timestamp || null,
               day_of_week: Number.isFinite(dNum) ? dNum : 0,
               is_parking: Boolean(w.is_parking),
+              original_address: w.original_address || null,
             })
           }
         })
+        
+        // Geocode addresses that need geocoding
+        const addressesToGeocode = payload.addresses_to_geocode || []
+        if (addressesToGeocode.length > 0) {
+          // Get Google Maps API key from settings
+          const { data: settingsData } = await supabase
+            .from('system_settings')
+            .select('setting_value')
+            .eq('setting_key', 'google_maps_api_key')
+            .maybeSingle()
+          const apiKey = settingsData?.setting_value
+          
+          if (!apiKey) {
+            throw new Error('Google Maps API key is required for geocoding addresses. Please set it in Settings.')
+          }
+          
+          // Prepare batch geocoding request with both sequence-based and address-based IDs
+          const geocodeItems = addressesToGeocode.map((addr: any) => ({
+            id: `seq_${addr.sequence}_day_${addr.day_of_week}_addr_${addr.address.substring(0, 50)}`,
+            address: addr.address,
+            cache_key: addr.cache_key,
+          }))
+          
+          // Call batch geocoding API
+          const geocodeResp = await axiosInstance.post('/api/v1/geocoding/batch', {
+            addresses: geocodeItems,
+            api_key: apiKey,
+          })
+          
+          const geocodeResults = geocodeResp.data?.data?.results || []
+          const geocodeMapByKey = new Map<string, { lat: number; lng: number }>()
+          const geocodeMapByAddress = new Map<string, { lat: number; lng: number }>()
+          
+          for (let i = 0; i < geocodeResults.length; i++) {
+            const result = geocodeResults[i]
+            const addrItem = addressesToGeocode[i]
+            if (result.success && result.latitude && result.longitude) {
+              const coords = { lat: result.latitude, lng: result.longitude }
+              geocodeMapByKey.set(result.id, coords)
+              // Also index by address for fallback matching
+              if (addrItem?.address) {
+                geocodeMapByAddress.set(addrItem.address.trim().toLowerCase(), coords)
+              }
+            }
+          }
+          
+          // Update items with geocoded coordinates
+          for (const item of items) {
+            if (!item.latitude || !item.longitude) {
+              // Try matching by sequence and day first
+              const key = `seq_${item.sequence_number}_day_${item.day_of_week}_addr_${(item.original_address || '').substring(0, 50)}`
+              let coords = geocodeMapByKey.get(key)
+              
+              // Fallback: match by address
+              if (!coords && item.original_address) {
+                coords = geocodeMapByAddress.get(item.original_address.trim().toLowerCase())
+              }
+              
+              if (coords) {
+                item.latitude = coords.lat
+                item.longitude = coords.lng
+              }
+            }
+          }
+        }
+        
         totalWaypoints = items.length
         parsedWaypoints = items
       }
 
-      const validWaypoints =
-        (parsedWaypoints ?? []).filter(
-          w =>
-            typeof w.latitude === 'number' &&
-            typeof w.longitude === 'number' &&
-            Number.isFinite(w.latitude) &&
-            Number.isFinite(w.longitude),
+      // Check if any waypoints still lack coordinates after geocoding
+      const waypointsWithoutCoords = (parsedWaypoints ?? []).filter(
+        w => !w.latitude || !w.longitude || !Number.isFinite(w.latitude) || !Number.isFinite(w.longitude)
+      )
+      
+      if (waypointsWithoutCoords.length > 0) {
+        throw new Error(
+          `${waypointsWithoutCoords.length} waypoint(s) are missing coordinates. ` +
+          'Please ensure all addresses can be geocoded or provide coordinates directly.'
         )
+      }
+      
+      const validWaypoints = parsedWaypoints ?? []
       totalWaypoints = validWaypoints.length
 
       const baseRoute = {
@@ -269,12 +342,12 @@ export default function RoutesPage() {
         const { error: deleteErr } = await supabase.from('waypoints').delete().eq('route_id', editingRoute.id)
         if (deleteErr) throw deleteErr
       } else {
-        const { data: routeIns, error: rErr } = await supabase
-          .from('routes')
+      const { data: routeIns, error: rErr } = await supabase
+        .from('routes')
           .insert([baseRoute])
-          .select('id')
-          .maybeSingle()
-        if (rErr) throw rErr
+        .select('id')
+        .maybeSingle()
+      if (rErr) throw rErr
         routeId = routeIns?.id as string
       }
 
@@ -290,6 +363,8 @@ export default function RoutesPage() {
             longitude: wp.longitude ?? null,
             timestamp: wp.timestamp ? new Date(wp.timestamp).toISOString() : new Date().toISOString(),
             day_of_week: typeof wp.day_of_week === 'number' ? wp.day_of_week : 0,
+            original_address: wp.original_address || null,
+            is_parking: wp.is_parking || false,
           }))
           batches.push(supabase.from('waypoints').insert(chunk))
         }
@@ -486,13 +561,14 @@ export default function RoutesPage() {
                 <div className="mt-2 rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800/40 p-3">
                   <p className="text-[11px] font-semibold text-gray-700 dark:text-neutral-200">Excel requirements</p>
                   <ul className="mt-1 space-y-1 text-[11px] text-gray-600 dark:text-neutral-400 list-disc pl-4">
-                    <li><span className="font-medium">timestamp</span> – ISO 8601 or <code>YYYY-MM-DD HH:MM:SS</code></li>
-                    <li><span className="font-medium">latitude</span> / <span className="font-medium">longitude</span> – decimal degrees (-90..90 / -180..180)</li>
-                    <li><span className="font-medium">day_of_week</span> – number 0 (Mon) → 6 (Sun) used to detect active days automatically</li>
-                    <li><span className="font-medium">is_parking</span> – optional boolean (TRUE/FALSE or 1/0)</li>
-                    <li><span className="font-medium">sequence</span> – optional order per day (defaults to row order if missing)</li>
-                    <li><span className="font-medium">address</span> – optional; used when coordinates are missing (will be geocoded)</li>
-                    <li><span className="font-medium">notes</span> – optional free text</li>
+                    <li><span className="font-medium text-red-600 dark:text-red-400">timestamp</span> – <strong>Required</strong>. ISO 8601 or <code>YYYY-MM-DD HH:MM:SS</code></li>
+                    <li><span className="font-medium text-red-600 dark:text-red-400">day_of_week</span> – <strong>Required</strong>. Number 0 (Mon) → 6 (Sun) used to detect active days automatically</li>
+                    <li><span className="font-medium text-red-600 dark:text-red-400">address</span> – <strong>Required</strong>. Will be geocoded to get coordinates if latitude/longitude are not provided</li>
+                    <li><span className="font-medium">latitude</span> / <span className="font-medium">longitude</span> – <em>Optional</em>. Decimal degrees (-90..90 / -180..180). If missing, address will be geocoded</li>
+                    <li><span className="font-medium">sequence</span> – <em>Optional</em>. Order per day (defaults to row order if missing)</li>
+                    <li><span className="font-medium">is_parking</span> – <em>Optional</em>. Boolean (TRUE/FALSE or 1/0). Marks parking/stop locations</li>
+                    <li><span className="font-medium">parking_duration_minutes</span> – <em>Optional</em>. Integer minutes. Duration to stay at parking location (only used if is_parking is TRUE)</li>
+                    <li><span className="font-medium">notes</span> – <em>Optional</em>. Free text for additional information about the waypoint</li>
                   </ul>
                   <p className="mt-2 text-[11px] text-gray-500 dark:text-neutral-500">
                     Active days are read from the <code>day_of_week</code> column—no manual selection needed.

@@ -163,7 +163,9 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
         })
       } else if (v.status === 'moving' && v.nextTarget) {
         const currentPosition = currentPos ? { lat: currentPos.lat(), lng: currentPos.lng() } : target
-        const duration = Math.max(4000, v.etaToNextMs ?? 4000)
+        // Make animation very slow when no API is hitting (multiply by 10 for very slow movement)
+        const baseDuration = v.etaToNextMs ?? 60000 // Default to 60 seconds if no ETA
+        const duration = Math.max(60000, baseDuration * 10) // Multiply by 10 to make it very slow
         animStatesRef.current.set(v.id, {
           from: currentPosition,
           to: v.nextTarget,
@@ -182,7 +184,7 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
           from: { lat: target.lat, lng: target.lng },
           to: { lat: target.lat + offsetLat, lng: target.lng + offsetLng },
           start: now,
-          duration: 6000,
+          duration: 12000, // Slower drift animation (doubled from 6000)
           base: target,
           drift: true,
         })
@@ -192,14 +194,14 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
       }
 
       marker!.setIcon({
-        path: window.google.maps.SymbolPath.CIRCLE,
-        fillColor: iconColor,
-        fillOpacity: 1,
-        strokeColor: '#ffffff',
-        strokeWeight: 2,
-        scale: 8,
-      })
-    }
+          path: window.google.maps.SymbolPath.CIRCLE,
+          fillColor: iconColor,
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+          scale: 8,
+        })
+      }
 
     markersRef.current.forEach((marker, id) => {
       if (!seen.has(id)) {
@@ -246,17 +248,19 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
                 lng: state.base.lng + offsetLng,
               }
               state.start = now
-              state.duration = 6000
+              state.duration = 12000 // Slower drift animation (doubled from 6000)
             } else {
               animStatesRef.current.delete(id)
             }
           } else if (vehicle && vehicle.status === 'moving' && state.origin) {
             marker.setPosition(state.origin)
+            // Make the restart animation very slow (multiply original duration by 10)
+            const slowDuration = state.duration * 10
             animStatesRef.current.set(id, {
               from: state.origin,
               to: state.base,
               start: now,
-              duration: state.duration,
+              duration: slowDuration,
               base: state.base,
               drift: false,
               origin: state.origin,
