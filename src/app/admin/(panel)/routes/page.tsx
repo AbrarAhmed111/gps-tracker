@@ -179,6 +179,7 @@ export default function RoutesPage() {
             timestamp: string | null
             day_of_week: number
             is_parking?: boolean
+            original_address?: string | null
           }>
         | null = null
       let activeDayFlags = editingRoute
