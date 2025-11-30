@@ -54,11 +54,14 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
       base: { lat: number; lng: number }
       drift: boolean
       origin?: { lat: number; lng: number }
+      roadPath?: any[] | null
     }
   >>(new Map())
   const vehiclesMapRef = useRef<Map<string, VehicleMarker>>(new Map())
   const simulatedPositionsRef = useRef<Map<string, { lat: number; lng: number; timestamp: number }>>(new Map())
   const waypointSequencesRef = useRef<Map<string, number>>(new Map()) // Track current waypoint sequence
+  const roadPathsCache = useRef<Map<string, any[]>>(new Map()) // Cache road paths (LatLng[])
+  const directionsServiceRef = useRef<any>(null) // DirectionsService
 
   // Haversine distance calculation (in kilometers)
   const haversineDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -72,13 +75,136 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
     return R * c
   }
 
-  // Calculate animation duration based on distance and speed
-  const calculateAnimationDuration = (
+  // Calculate distance along a path of coordinates
+  const calculatePathDistance = (path: any[]): number => {
+    if (path.length < 2) return 0
+    let total = 0
+    for (let i = 1; i < path.length; i++) {
+      const prev = path[i - 1]
+      const curr = path[i]
+      const prevLat = typeof prev.lat === 'function' ? prev.lat() : prev.lat
+      const prevLng = typeof prev.lng === 'function' ? prev.lng() : prev.lng
+      const currLat = typeof curr.lat === 'function' ? curr.lat() : curr.lat
+      const currLng = typeof curr.lng === 'function' ? curr.lng() : curr.lng
+      total += haversineDistance(prevLat, prevLng, currLat, currLng)
+    }
+    return total
+  }
+
+  // Get road path between two points using Google Directions API
+  const getRoadPath = async (
+    from: { lat: number; lng: number },
+    to: { lat: number; lng: number }
+  ): Promise<any[] | null> => {
+    const cacheKey = `${from.lat.toFixed(6)},${from.lng.toFixed(6)}_${to.lat.toFixed(6)},${to.lng.toFixed(6)}`
+    
+    // Check cache first
+    if (roadPathsCache.current.has(cacheKey)) {
+      return roadPathsCache.current.get(cacheKey)!
+    }
+
+    if (!window.google || !window.google.maps) return null
+    if (!directionsServiceRef.current) {
+      directionsServiceRef.current = new window.google.maps.DirectionsService()
+    }
+
+    return new Promise((resolve) => {
+      try {
+        directionsServiceRef.current!.route(
+          {
+            origin: new window.google.maps.LatLng(from.lat, from.lng),
+            destination: new window.google.maps.LatLng(to.lat, to.lng),
+            travelMode: window.google.maps.TravelMode.DRIVING,
+          },
+          (result: any, status: any) => {
+            if (status === window.google.maps.DirectionsStatus.OK && result) {
+              const path: any[] = []
+              const route = result.routes[0]
+              if (route && route.overview_path) {
+                route.overview_path.forEach((point: any) => {
+                  path.push(point)
+                })
+                // Cache the path
+                roadPathsCache.current.set(cacheKey, path)
+                resolve(path)
+              } else {
+                resolve(null)
+              }
+            } else {
+              // If Directions API fails or is not enabled, fall back to straight line
+              // Silently fail - this is expected if Directions API is not enabled
+              resolve(null)
+            }
+          }
+        )
+      } catch (error) {
+        // If Directions Service is not available, fall back to straight line
+        resolve(null)
+      }
+    })
+  }
+
+  // Get position along a path at a given progress (0-1)
+  const getPositionAlongPath = (path: any[], progress: number): { lat: number; lng: number } => {
+    if (!path || path.length === 0) {
+      return { lat: 0, lng: 0 }
+    }
+    
+    const getLat = (p: any) => typeof p.lat === 'function' ? p.lat() : p.lat
+    const getLng = (p: any) => typeof p.lng === 'function' ? p.lng() : p.lng
+    
+    if (progress <= 0) {
+      return { lat: getLat(path[0]), lng: getLng(path[0]) }
+    }
+    if (progress >= 1) {
+      return { lat: getLat(path[path.length - 1]), lng: getLng(path[path.length - 1]) }
+    }
+
+    // Calculate total distance
+    const totalDistance = calculatePathDistance(path)
+    const targetDistance = totalDistance * progress
+
+    // Find the segment where the target distance falls
+    let accumulatedDistance = 0
+    for (let i = 1; i < path.length; i++) {
+      const segmentDistance = haversineDistance(
+        getLat(path[i - 1]),
+        getLng(path[i - 1]),
+        getLat(path[i]),
+        getLng(path[i])
+      )
+      
+      if (accumulatedDistance + segmentDistance >= targetDistance) {
+        // Interpolate within this segment
+        const segmentProgress = segmentDistance > 0 
+          ? (targetDistance - accumulatedDistance) / segmentDistance 
+          : 0
+        const lat = getLat(path[i - 1]) + (getLat(path[i]) - getLat(path[i - 1])) * segmentProgress
+        const lng = getLng(path[i - 1]) + (getLng(path[i]) - getLng(path[i - 1])) * segmentProgress
+        return { lat, lng }
+      }
+      
+      accumulatedDistance += segmentDistance
+    }
+
+    return { lat: getLat(path[path.length - 1]), lng: getLng(path[path.length - 1]) }
+  }
+
+  // Calculate animation duration based on distance and speed (using road path if available)
+  const calculateAnimationDuration = async (
     from: { lat: number; lng: number },
     to: { lat: number; lng: number },
-    speedKmh?: number
-  ): number => {
-    const distanceKm = haversineDistance(from.lat, from.lng, to.lat, to.lng)
+    speedKmh?: number,
+    roadPath?: any[] | null
+  ): Promise<number> => {
+    let distanceKm: number
+    if (roadPath && roadPath.length > 0) {
+      // Use actual road distance
+      distanceKm = calculatePathDistance(roadPath)
+    } else {
+      // Fall back to straight-line distance
+      distanceKm = haversineDistance(from.lat, from.lng, to.lat, to.lng)
+    }
     // Use vehicle speed if available, otherwise default to 30 km/h for smooth animation
     const effectiveSpeed = speedKmh && speedKmh > 0 ? speedKmh : 30
     // Calculate time in milliseconds: (distance / speed) * 3600000 (hours to ms)
@@ -253,16 +379,23 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
       } else if (v.status === 'moving' && v.nextTarget) {
         // Use API-provided nextTarget with calculated duration
         const currentPosition = currentPos ? { lat: currentPos.lat(), lng: currentPos.lng() } : target
-        const duration = calculateAnimationDuration(currentPosition, v.nextTarget, v.speedKmh)
-        animStatesRef.current.set(v.id, {
-          from: currentPosition,
-          to: v.nextTarget,
-          start: now,
-          duration,
-          base: v.nextTarget,
-          drift: false,
-          origin: currentPosition,
-        })
+        if (v.nextTarget) {
+          // Fetch road path for this segment
+          getRoadPath(currentPosition, v.nextTarget).then(roadPath => {
+            calculateAnimationDuration(currentPosition, v.nextTarget!, v.speedKmh, roadPath).then(duration => {
+              animStatesRef.current.set(v.id, {
+                from: currentPosition,
+                to: v.nextTarget!,
+                start: performance.now(),
+                duration,
+                base: v.nextTarget!,
+                drift: false,
+                origin: currentPosition,
+                roadPath: roadPath || null,
+              })
+            })
+          })
+        }
       } else if (v.status === 'moving' && v.waypoints && v.waypoints.length > 0) {
         // No API target, but we have waypoints - calculate next waypoint dynamically
         const simPos = simulatedPositionsRef.current.get(v.id)
@@ -275,15 +408,20 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
         // Find next waypoint in sequence
         const nextWp = findNextWaypoint(v, currentPosition)
         if (nextWp) {
-          const duration = calculateAnimationDuration(currentPosition, nextWp, v.speedKmh)
-          animStatesRef.current.set(v.id, {
-            from: currentPosition,
-            to: nextWp,
-            start: now,
-            duration,
-            base: nextWp,
-            drift: false,
-            origin: currentPosition,
+          // Fetch road path for this segment
+          getRoadPath(currentPosition, nextWp).then(roadPath => {
+            calculateAnimationDuration(currentPosition, nextWp, v.speedKmh, roadPath).then(duration => {
+              animStatesRef.current.set(v.id, {
+                from: currentPosition,
+                to: nextWp,
+                start: performance.now(),
+                duration,
+                base: nextWp,
+                drift: false,
+                origin: currentPosition,
+                roadPath: roadPath || null,
+              })
+            })
           })
         } else {
           // No next waypoint found, start drift
@@ -357,8 +495,22 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
           return
         }
         const progress = Math.min(1, Math.max(0, (now - state.start) / state.duration))
-        const lat = state.from.lat + (state.to.lat - state.from.lat) * progress
-        const lng = state.from.lng + (state.to.lng - state.from.lng) * progress
+        
+        // Use road path if available, otherwise use straight-line interpolation
+        let lat: number
+        let lng: number
+        
+        if (state.roadPath && state.roadPath.length > 0) {
+          // Animate along the road path
+          const pos = getPositionAlongPath(state.roadPath, progress)
+          lat = pos.lat
+          lng = pos.lng
+        } else {
+          // Fall back to straight-line interpolation
+          lat = state.from.lat + (state.to.lat - state.from.lat) * progress
+          lng = state.from.lng + (state.to.lng - state.from.lng) * progress
+        }
+        
         marker.setPosition({ lat, lng })
         
         // Update simulated position continuously for accurate tracking
@@ -397,15 +549,20 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
             const nextWp = vehicle.nextTarget || (vehicle.waypoints ? findNextWaypoint(vehicle, state.to) : null)
             
             if (nextWp) {
-              const duration = calculateAnimationDuration(currentPosition, nextWp, vehicle.speedKmh)
-              animStatesRef.current.set(id, {
-                from: currentPosition,
-                to: nextWp,
-                start: now,
-                duration,
-                base: nextWp,
-                drift: false,
-                origin: currentPosition,
+              // Fetch road path for next segment
+              getRoadPath(currentPosition, nextWp).then(roadPath => {
+                calculateAnimationDuration(currentPosition, nextWp, vehicle.speedKmh, roadPath).then(duration => {
+                  animStatesRef.current.set(id, {
+                    from: currentPosition,
+                    to: nextWp,
+                    start: performance.now(),
+                    duration,
+                    base: nextWp,
+                    drift: false,
+                    origin: currentPosition,
+                    roadPath: roadPath || null,
+                  })
+                })
               })
             } else {
               // No more waypoints, start drift

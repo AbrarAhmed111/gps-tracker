@@ -280,6 +280,24 @@ export default function RoutesPage() {
             }
           }
           
+          // Track failed geocoding attempts
+          const failedAddresses: Array<{ sequence: number; address: string; error?: string }> = []
+          
+          // Collect failed geocoding results first
+          for (const result of geocodeResults) {
+            if (!result.success && result.address) {
+              // Extract sequence from ID or find matching address
+              const addrItem = addressesToGeocode.find((a: any) => a.address === result.address)
+              if (addrItem) {
+                failedAddresses.push({
+                  sequence: addrItem.sequence,
+                  address: result.address,
+                  error: result.error || 'Geocoding failed',
+                })
+              }
+            }
+          }
+          
           // Update items with geocoded coordinates
           for (const item of items) {
             if (!item.latitude || !item.longitude) {
@@ -295,8 +313,28 @@ export default function RoutesPage() {
               if (coords) {
                 item.latitude = coords.lat
                 item.longitude = coords.lng
+              } else if (item.original_address && !failedAddresses.find(f => f.address === item.original_address)) {
+                // Only add if not already in failed list
+                failedAddresses.push({
+                  sequence: item.sequence_number,
+                  address: item.original_address,
+                  error: 'No geocoding result found',
+                })
               }
             }
+          }
+          
+          // Show warning if some addresses failed (but don't block if some succeeded)
+          if (failedAddresses.length > 0 && failedAddresses.length < addressesToGeocode.length) {
+            const failedList = failedAddresses
+              .slice(0, 5) // Show first 5 failures
+              .map(f => `• Sequence ${f.sequence}: "${f.address.substring(0, 40)}${f.address.length > 40 ? '...' : ''}" - ${f.error || 'Failed'}`)
+              .join('\n')
+            const moreText = failedAddresses.length > 5 ? `\n... and ${failedAddresses.length - 5} more` : ''
+            toast.error(
+              `${failedAddresses.length} of ${addressesToGeocode.length} address(es) could not be geocoded:\n${failedList}${moreText}`,
+              { duration: 12000 }
+            )
           }
         }
         
@@ -310,9 +348,20 @@ export default function RoutesPage() {
       )
       
       if (waypointsWithoutCoords.length > 0) {
+        const missingDetails = waypointsWithoutCoords
+          .map((w, idx) => {
+            const seq = w.sequence_number || idx + 1
+            const addr = w.original_address || 'No address provided'
+            return `Sequence ${seq}: "${addr}"`
+          })
+          .join('\n')
+        
         throw new Error(
-          `${waypointsWithoutCoords.length} waypoint(s) are missing coordinates. ` +
-          'Please ensure all addresses can be geocoded or provide coordinates directly.'
+          `${waypointsWithoutCoords.length} waypoint(s) are missing coordinates:\n${missingDetails}\n\n` +
+          'Please:\n' +
+          '1. Check that the addresses are valid and complete\n' +
+          '2. Ensure your Google Maps API key has Geocoding API enabled\n' +
+          '3. Or provide latitude/longitude coordinates directly in the Excel file'
         )
       }
       
@@ -356,25 +405,101 @@ export default function RoutesPage() {
       if (validWaypoints && validWaypoints.length > 0) {
         const batches = []
         for (let i = 0; i < validWaypoints.length; i += 1000) {
-          const chunk = validWaypoints.slice(i, i + 1000).map(wp => ({
-            route_id: routeId,
-            sequence_number: wp.sequence_number,
-            latitude: wp.latitude ?? null,
-            longitude: wp.longitude ?? null,
-            timestamp: wp.timestamp ? new Date(wp.timestamp).toISOString() : new Date().toISOString(),
-            day_of_week: typeof wp.day_of_week === 'number' ? wp.day_of_week : 0,
-            original_address: wp.original_address || null,
-            is_parking: wp.is_parking || false,
-          }))
+          const chunk = validWaypoints.slice(i, i + 1000).map(wp => {
+            // Ensure day_of_week is valid (0-6)
+            const dayOfWeek = typeof wp.day_of_week === 'number' && wp.day_of_week >= 0 && wp.day_of_week <= 6 
+              ? wp.day_of_week 
+              : 0
+            
+            return {
+              route_id: routeId,
+              sequence_number: wp.sequence_number,
+              latitude: wp.latitude ?? null,
+              longitude: wp.longitude ?? null,
+              timestamp: wp.timestamp ? new Date(wp.timestamp).toISOString() : new Date().toISOString(),
+              day_of_week: dayOfWeek,
+              original_address: wp.original_address || null,
+              is_parking: wp.is_parking || false,
+            }
+          })
           batches.push(supabase.from('waypoints').insert(chunk))
         }
         for (const b of batches) {
           const { error } = await b
-          if (error) throw error
+          if (error) {
+            console.error('Waypoint insert error:', error)
+            throw new Error(`Failed to save waypoints: ${error.message}`)
+          }
         }
+      } else {
+        throw new Error('No valid waypoints to save. Please check your Excel file has valid coordinates or addresses.')
       }
 
-      toast.success(editingRoute ? 'Route updated' : 'Route created')
+      // Show success message with details
+      const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+      const activeDays = Object.entries(activeDayFlags)
+        .filter(([_, active]) => active)
+        .map(([day, _]) => day.charAt(0).toUpperCase() + day.slice(1))
+      
+      // Check if route is active for today
+      const today = new Date()
+      const jsDay = today.getDay() // 0=Sunday, 6=Saturday
+      const mondayZeroDay = (jsDay + 6) % 7 // Convert to Monday=0 format
+      const todayName = dayNames[mondayZeroDay]
+      const isActiveToday = 
+        (mondayZeroDay === 0 && activeDayFlags.monday) ||
+        (mondayZeroDay === 1 && activeDayFlags.tuesday) ||
+        (mondayZeroDay === 2 && activeDayFlags.wednesday) ||
+        (mondayZeroDay === 3 && activeDayFlags.thursday) ||
+        (mondayZeroDay === 4 && activeDayFlags.friday) ||
+        (mondayZeroDay === 5 && activeDayFlags.saturday) ||
+        (mondayZeroDay === 6 && activeDayFlags.sunday)
+      
+      const successMsg = editingRoute 
+        ? `Route updated! ${totalWaypoints} waypoints saved. Active days: ${activeDays.length > 0 ? activeDays.join(', ') : 'None'}`
+        : `Route created! ${totalWaypoints} waypoints saved. Active days: ${activeDays.length > 0 ? activeDays.join(', ') : 'None'}`
+      
+      toast.success(successMsg, { duration: 5000 })
+      
+      // Show warning if route is not active for today
+      if (!isActiveToday && activeDays.length > 0) {
+        setTimeout(() => {
+          toast.error(
+            `Note: This route is not active for today (${todayName}). It will appear on: ${activeDays.join(', ')}`,
+            { duration: 8000 }
+          )
+        }, 1500)
+      } else if (activeDays.length === 0) {
+        setTimeout(() => {
+          toast.error(
+            'Warning: No active days detected from Excel file. Route will not appear on the dashboard. Please check your day_of_week column.',
+            { duration: 8000 }
+          )
+        }, 1500)
+      }
+      
+      // Verify route was saved correctly
+      const { data: verifyRoute } = await supabase
+        .from('routes')
+        .select('id, is_active, monday, tuesday, wednesday, thursday, friday, saturday, sunday')
+        .eq('id', routeId)
+        .maybeSingle()
+      
+      if (!verifyRoute) {
+        toast.error('Route saved but verification failed. Please refresh the page.')
+      } else if (!verifyRoute.is_active) {
+        toast.error('Route was saved but is not active. Please activate it manually.', { duration: 6000 })
+      }
+      
+      // Verify waypoints were saved
+      const { count: waypointCount } = await supabase
+        .from('waypoints')
+        .select('*', { count: 'exact', head: true })
+        .eq('route_id', routeId)
+      
+      if (waypointCount !== totalWaypoints) {
+        toast.error(`Warning: Expected ${totalWaypoints} waypoints but found ${waypointCount}. Please check the route.`, { duration: 6000 })
+      }
 
       const { data } = await supabase
         .from('routes')
@@ -385,6 +510,29 @@ export default function RoutesPage() {
       setRoutes((data as any) ?? [])
 
       closeModal()
+      
+      // Show reminder to refresh dashboard
+      if (!editingRoute) {
+        setTimeout(() => {
+          toast(
+            (t) => (
+              <div className="flex items-center gap-2">
+                <span>Route is ready! Refresh the dashboard to see it.</span>
+                <button
+                  onClick={() => {
+                    window.open('/', '_blank')
+                    toast.dismiss(t.id)
+                  }}
+                  className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Open Dashboard
+                </button>
+              </div>
+            ),
+            { duration: 8000 }
+          )
+        }, 1000)
+      }
     } catch (e: any) {
       toast.error(e?.message || (editingRoute ? 'Failed to update route' : 'Failed to create route'))
     } finally {
