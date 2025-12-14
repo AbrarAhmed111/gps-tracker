@@ -734,7 +734,7 @@ export default function RoutesPage() {
                 <div className="mt-2 rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800/40 p-3">
                   <p className="text-[11px] font-semibold text-gray-700 dark:text-neutral-200">Excel requirements</p>
                   <ul className="mt-1 space-y-1 text-[11px] text-gray-600 dark:text-neutral-400 list-disc pl-4">
-                    <li><span className="font-medium text-red-600 dark:text-red-400">timestamp</span> – <strong>Required</strong>. Time of day (e.g. <code>09:00</code> or <code>09:00:00</code>). Any date part is ignored; we anchor to a synthetic week for weekly replay.</li>
+                    <li><span className="font-medium text-red-600 dark:text-red-400">timestamp</span> – <strong>Required</strong>. Time of day in <strong>UTC</strong> (e.g. <code>09:00</code> or <code>09:00:00</code>). If your times are local, convert to UTC before upload. Any date part is ignored; we anchor to a synthetic week for weekly replay.</li>
                     <li><span className="font-medium text-red-600 dark:text-red-400">day_of_week</span> – <strong>Required</strong>. Number 0 (Mon) → 6 (Sun); combines with time to build the weekly schedule</li>
                     <li><span className="font-medium text-red-600 dark:text-red-400">address</span> – <strong>Required</strong>. Will be geocoded to get coordinates if latitude/longitude are not provided</li>
                     <li><span className="font-medium">latitude</span> / <span className="font-medium">longitude</span> – <em>Optional</em>. Decimal degrees (-90..90 / -180..180). If missing, address will be geocoded</li>

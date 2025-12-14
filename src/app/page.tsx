@@ -65,6 +65,8 @@ type Vehicle = {
   nextTarget?: { lat: number; lng: number } | null
   etaToNextMs?: number | null
   waypoints?: Array<{ lat: number; lng: number; sequence: number }>
+  parkedReason?: string
+  parkedUntil?: string | null
 }
 
 export default function Home() {
@@ -159,6 +161,7 @@ export default function Home() {
       const jsDay = now.getDay() // 0..6, 0=Sunday
       const mondayZeroDay = (jsDay + 6) % 7 // 0..6, 0=Monday
       const anchorNowIso = toAnchorWeekIso(mondayZeroDay, now)
+      const anchorNowDate = new Date(anchorNowIso)
 
       // Fetch waypoints for these routes (filtered to active day)
       const { data: waypoints } = await supabase
@@ -260,6 +263,7 @@ export default function Home() {
         (vehiclesData ?? []).map(v => {
           const routeInfo = vehicleIdToRoute[v.id]
           const wps = routeInfo ? (routeIdToWaypoints.get(routeInfo.id) ?? []).slice(0, MAX_WAYPOINTS_PER_ROUTE) : []
+        const wpsSorted = [...wps].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
           const pos = posByVehicle.get(v.id)
           let status: Vehicle['status'] = 'inactive'
           let lat: number | undefined
@@ -270,6 +274,8 @@ export default function Home() {
           let bearingDeg: number | undefined
           let nextTarget: { lat: number; lng: number } | null = null
           let etaToNextMs: number | null = null
+        let parkedReason: string | undefined
+        let parkedUntil: string | null = null
           if (pos) {
             const s = (pos.status || '').toString().toLowerCase()
             if (s === 'parked' || s === 'completed' || s === 'not_started') status = 'parked'
@@ -310,6 +316,13 @@ export default function Home() {
                 lng: segTo.longitude,
               }
             }
+            if (segTo?.timestamp) {
+              const ts = new Date(segTo.timestamp).toISOString()
+              if (status === 'parked') {
+                parkedReason = 'Waiting for next leg'
+                parkedUntil = ts
+              }
+            }
           }
           // If simulation did not return a position but route has waypoints, fall back to first waypoint
           if ((lat == null || lng == null) && wps.length > 0) {
@@ -338,6 +351,28 @@ export default function Home() {
               }))
             : undefined
 
+        // Derive parked reason/time if parked or inactive but has schedule
+        if (wpsSorted.length === 0) {
+          if (status === 'parked' || status === 'inactive') {
+            parkedReason = 'No waypoints scheduled today'
+          }
+        } else {
+          const firstTs = new Date(wpsSorted[0].timestamp)
+          const lastTs = new Date(wpsSorted[wpsSorted.length - 1].timestamp)
+          if (anchorNowDate < firstTs) {
+            parkedReason = 'Route not started yet'
+            parkedUntil = firstTs.toISOString()
+            if (status === 'inactive') status = 'parked'
+          } else if (anchorNowDate > lastTs) {
+            if (status !== 'moving') {
+              status = 'parked'
+              parkedReason = 'Route finished for today'
+            }
+          } else if (status === 'parked' && !parkedReason) {
+            parkedReason = 'Holding until next segment'
+          }
+        }
+
           return {
             id: v.id,
             name: v.name,
@@ -359,6 +394,8 @@ export default function Home() {
             nextTarget,
             etaToNextMs,
             waypoints: vehicleWaypoints,
+            parkedReason,
+            parkedUntil,
           }
         }) ?? []
       setVehicles(compiled)

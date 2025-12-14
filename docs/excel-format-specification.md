@@ -7,9 +7,9 @@ This document describes the complete column specification for Excel files used t
 These columns **must** be present in your Excel file:
 
 ### 1. `timestamp` (Required)
-- **Type**: Time of day
+- **Type**: Time of day (UTC)
 - **Format**: `HH:MM` or `HH:MM:SS` (any date part is ignored)
-- **Description**: The scheduled time for the vehicle to arrive at this waypoint. We combine this time-of-day with `day_of_week` and map it into a synthetic anchor week so routes can replay every week without real calendar dates.
+- **Description**: The scheduled UTC time for the vehicle to arrive at this waypoint. We combine this time-of-day with `day_of_week` and map it into a synthetic anchor week so routes can replay every week without real calendar dates. If your times are local, convert them to UTC before uploading (e.g., PKT = UTC+5, so 09:00 PKT → 04:00 UTC).
 - **Examples**:
   - `09:00`
   - `09:15:00`

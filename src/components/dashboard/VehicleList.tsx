@@ -17,6 +17,8 @@ type VehicleListItem = {
   progressPercent?: number
   vehicleNumber?: string
   vehicleType?: string
+  parkedReason?: string
+  parkedUntil?: string | null
 }
 
 type VehicleListProps = {
@@ -34,6 +36,13 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
   const [open, setOpen] = useState<boolean>(true)
   const activeVehicles = vehicles.filter(v => v.status !== 'inactive')
   const inactiveVehicles = vehicles.filter(v => v.status === 'inactive')
+
+  const formatTime = (iso?: string | null) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return ''
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
 
   return (
     <aside className="h-full flex flex-col">
@@ -130,12 +139,18 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
                   {v.speedKmh != null && (
                     <span>Speed: {v.speedKmh.toFixed(1)} km/h</span>
                   )}
-                  {v.etaNextMinutes != null && (
+                  {/* {v.etaNextMinutes != null && (
                     <span>ETA next: {v.etaNextMinutes.toFixed(1)} min</span>
                   )}
-                 
+                  */}
                 </div>
-                {typeof v.progressPercent === 'number' && (
+                {v.status === 'parked' && (
+                  <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
+                    {v.parkedReason || 'Parked'}
+                    {v.parkedUntil ? ` • Next move at ${formatTime(v.parkedUntil)} (local)` : ''}
+                  </p>
+                )}
+                {/* {typeof v.progressPercent === 'number' && (
                   <div className="mt-2">
                     <div className="h-1.5 w-full rounded bg-gray-200 dark:bg-neutral-800 overflow-hidden">
                       <div
@@ -147,7 +162,7 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
                       Route progress: {Math.round(v.progressPercent)}%
                     </div>
                   </div>
-                )}
+                )} */}
               </div>
             </li>
           ))}
