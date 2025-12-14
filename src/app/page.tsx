@@ -11,6 +11,42 @@ import { axiosInstance } from '@/utils/axios'
 
 const MAX_WAYPOINTS_PER_ROUTE = 500
 
+// Anchor all calculations to a synthetic week (Mon 2024-01-01) so routes replay weekly without real dates.
+const ANCHOR_WEEK_START = { year: 2024, monthIndex: 0, day: 1 }
+const toAnchorWeekIso = (mondayZeroDay: number, sourceDate: Date) => {
+  const safeDay = Number.isFinite(mondayZeroDay) ? Math.max(0, Math.min(6, mondayZeroDay)) : 0
+  const ms = Date.UTC(
+    ANCHOR_WEEK_START.year,
+    ANCHOR_WEEK_START.monthIndex,
+    ANCHOR_WEEK_START.day + safeDay,
+    sourceDate.getHours(),
+    sourceDate.getMinutes(),
+    sourceDate.getSeconds(),
+    sourceDate.getMilliseconds(),
+  )
+  return new Date(ms).toISOString()
+}
+
+const normalizeWaypointTimestamp = (rawTs: string | null | undefined, dayOfWeek: number, fallbackSource: Date) => {
+  const safeDay = Number.isFinite(dayOfWeek) ? Math.max(0, Math.min(6, dayOfWeek)) : 0
+  if (rawTs) {
+    const parsed = new Date(rawTs)
+    if (!Number.isNaN(parsed.getTime())) {
+      const anchoredMs = Date.UTC(
+        ANCHOR_WEEK_START.year,
+        ANCHOR_WEEK_START.monthIndex,
+        ANCHOR_WEEK_START.day + safeDay,
+        parsed.getHours(),
+        parsed.getMinutes(),
+        parsed.getSeconds(),
+        parsed.getMilliseconds(),
+      )
+      return new Date(anchoredMs).toISOString()
+    }
+  }
+  return toAnchorWeekIso(safeDay, fallbackSource)
+}
+
 type Vehicle = {
   id: string
   name: string
@@ -68,8 +104,6 @@ export default function Home() {
     }
   }, [])
 
-  const MAX_WAYPOINTS_PER_ROUTE = 500
-
   const loadData = useCallback(async () => {
     if (loadingRef.current) return
     loadingRef.current = true
@@ -124,6 +158,7 @@ export default function Home() {
       const nowIso = now.toISOString()
       const jsDay = now.getDay() // 0..6, 0=Sunday
       const mondayZeroDay = (jsDay + 6) % 7 // 0..6, 0=Monday
+      const anchorNowIso = toAnchorWeekIso(mondayZeroDay, now)
 
       // Fetch waypoints for these routes (filtered to active day)
       const { data: waypoints } = await supabase
@@ -147,7 +182,7 @@ export default function Home() {
         // @ts-ignore
         const lng = typeof w.longitude === 'number' ? w.longitude : Number(w.longitude)
         // @ts-ignore
-        const ts = w.timestamp ? new Date(w.timestamp as string).toISOString() : new Date().toISOString()
+        const ts = normalizeWaypointTimestamp(w.timestamp as string, (w.day_of_week ?? mondayZeroDay) as number, now)
         routeIdToWaypoints.get(key)!.push({
           // @ts-ignore
           sequence: w.sequence_number as number,
@@ -177,7 +212,7 @@ export default function Home() {
             flags.sunday
           return {
             vehicle_id: v.id,
-            current_time: nowIso,
+            current_time: anchorNowIso,
             day_of_week: mondayZeroDay,
             is_day_active: !!isActiveToday,
             waypoints: wps,
@@ -211,7 +246,7 @@ export default function Home() {
         throw new Error('Backend base URL not configured. Set NEXT_PUBLIC_BACKEND_BASE_URL.')
       }
       const simResp = await axiosInstance.post('/api/v1/simulation/calculate-positions-batch', {
-        current_time: nowIso,
+        current_time: anchorNowIso,
         vehicles: vehiclesPayload,
         interpolation_method: 'linear',
       })
