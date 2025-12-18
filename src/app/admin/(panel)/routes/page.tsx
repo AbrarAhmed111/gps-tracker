@@ -136,29 +136,6 @@ export default function RoutesPage() {
     }
   }
 
-  const ANCHOR_WEEK_START_MS = Date.UTC(2024, 0, 1) // Monday 2024-01-01 (anchor week)
-
-  function anchorTimestampToWeek(ts: string | null, dayOfWeek: number) {
-    const safeDay = Number.isFinite(dayOfWeek) ? Math.max(0, Math.min(6, Number(dayOfWeek))) : 0
-    if (ts) {
-      const parsed = new Date(ts)
-      if (!Number.isNaN(parsed.getTime())) {
-        const anchoredMs = Date.UTC(
-          2024,
-          0,
-          1 + safeDay,
-          parsed.getHours(),
-          parsed.getMinutes(),
-          parsed.getSeconds(),
-          parsed.getMilliseconds(),
-        )
-        return new Date(anchoredMs).toISOString()
-      }
-    }
-    const base = new Date(ANCHOR_WEEK_START_MS + safeDay * 24 * 60 * 60 * 1000)
-    return base.toISOString()
-  }
-
   async function handleCreate() {
     if (!vehicleId) {
       toast.error('Select a vehicle')
@@ -284,7 +261,7 @@ export default function RoutesPage() {
           // Call batch geocoding API
           const geocodeResp = await axiosInstance.post('/api/v1/geocoding/batch', {
             addresses: geocodeItems,
-            api_key: apiKey,
+                api_key: apiKey,
           })
           
           const geocodeResults = geocodeResp.data?.data?.results || []
@@ -344,7 +321,7 @@ export default function RoutesPage() {
                   address: item.original_address,
                   error: 'No geocoding result found',
                 })
-              }
+                  }
             }
           }
           
@@ -359,8 +336,8 @@ export default function RoutesPage() {
               `${failedAddresses.length} of ${addressesToGeocode.length} address(es) could not be geocoded:\n${failedList}${moreText}`,
               { duration: 12000 }
             )
+            }
           }
-        }
         
         totalWaypoints = items.length
         parsedWaypoints = items
@@ -369,7 +346,7 @@ export default function RoutesPage() {
       // Check if any waypoints still lack coordinates after geocoding
       const waypointsWithoutCoords = (parsedWaypoints ?? []).filter(
         w => !w.latitude || !w.longitude || !Number.isFinite(w.latitude) || !Number.isFinite(w.longitude)
-      )
+        )
       
       if (waypointsWithoutCoords.length > 0) {
         const missingDetails = waypointsWithoutCoords
@@ -436,12 +413,11 @@ export default function RoutesPage() {
               : 0
             
             return {
-              route_id: routeId,
-              sequence_number: wp.sequence_number,
-              latitude: wp.latitude ?? null,
-              longitude: wp.longitude ?? null,
-              // Anchor timestamps to a synthetic week so routes repeat weekly without real dates.
-              timestamp: anchorTimestampToWeek(wp.timestamp, dayOfWeek),
+            route_id: routeId,
+            sequence_number: wp.sequence_number,
+            latitude: wp.latitude ?? null,
+            longitude: wp.longitude ?? null,
+            timestamp: wp.timestamp ? new Date(wp.timestamp).toISOString() : new Date().toISOString(),
               day_of_week: dayOfWeek,
               original_address: wp.original_address || null,
               is_parking: wp.is_parking || false,
@@ -454,8 +430,8 @@ export default function RoutesPage() {
           if (error) {
             console.error('Waypoint insert error:', error)
             throw new Error(`Failed to save waypoints: ${error.message}`)
-          }
         }
+      }
       } else {
         throw new Error('No valid waypoints to save. Please check your Excel file has valid coordinates or addresses.')
       }
@@ -734,8 +710,8 @@ export default function RoutesPage() {
                 <div className="mt-2 rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800/40 p-3">
                   <p className="text-[11px] font-semibold text-gray-700 dark:text-neutral-200">Excel requirements</p>
                   <ul className="mt-1 space-y-1 text-[11px] text-gray-600 dark:text-neutral-400 list-disc pl-4">
-                    <li><span className="font-medium text-red-600 dark:text-red-400">timestamp</span> – <strong>Required</strong>. Time of day in <strong>UTC</strong> (e.g. <code>09:00</code> or <code>09:00:00</code>). If your times are local, convert to UTC before upload. Any date part is ignored; we anchor to a synthetic week for weekly replay.</li>
-                    <li><span className="font-medium text-red-600 dark:text-red-400">day_of_week</span> – <strong>Required</strong>. Number 0 (Mon) → 6 (Sun); combines with time to build the weekly schedule</li>
+                    <li><span className="font-medium text-red-600 dark:text-red-400">timestamp</span> – <strong>Required</strong>. ISO 8601 or <code>YYYY-MM-DD HH:MM:SS</code></li>
+                    <li><span className="font-medium text-red-600 dark:text-red-400">day_of_week</span> – <strong>Required</strong>. Number 0 (Mon) → 6 (Sun) used to detect active days automatically</li>
                     <li><span className="font-medium text-red-600 dark:text-red-400">address</span> – <strong>Required</strong>. Will be geocoded to get coordinates if latitude/longitude are not provided</li>
                     <li><span className="font-medium">latitude</span> / <span className="font-medium">longitude</span> – <em>Optional</em>. Decimal degrees (-90..90 / -180..180). If missing, address will be geocoded</li>
                     <li><span className="font-medium">sequence</span> – <em>Optional</em>. Order per day (defaults to row order if missing)</li>
@@ -745,9 +721,6 @@ export default function RoutesPage() {
                   </ul>
                   <p className="mt-2 text-[11px] text-gray-500 dark:text-neutral-500">
                     Active days are read from the <code>day_of_week</code> column—no manual selection needed.
-                  </p>
-                  <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
-                    Routes are anchored to a synthetic week (Mon=2024-01-01) so they can repeat every week without real calendar dates.
                   </p>
                   {editingRoute && (
                     <p className="mt-1 text-[11px] text-blue-600 dark:text-blue-300">

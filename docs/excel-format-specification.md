@@ -7,19 +7,19 @@ This document describes the complete column specification for Excel files used t
 These columns **must** be present in your Excel file:
 
 ### 1. `timestamp` (Required)
-- **Type**: Time of day (UTC)
-- **Format**: `HH:MM` or `HH:MM:SS` (any date part is ignored)
-- **Description**: The scheduled UTC time for the vehicle to arrive at this waypoint. We combine this time-of-day with `day_of_week` and map it into a synthetic anchor week so routes can replay every week without real calendar dates. If your times are local, convert them to UTC before uploading (e.g., PKT = UTC+5, so 09:00 PKT → 04:00 UTC).
+- **Type**: Date/Time
+- **Format**: ISO 8601 or `YYYY-MM-DD HH:MM:SS`
+- **Description**: The scheduled time for the vehicle to arrive at this waypoint
 - **Examples**:
-  - `09:00`
-  - `09:15:00`
-  - `23:50`
-- **Notes**: If you include a full datetime, we discard the date and keep only the time.
+  - `2025-11-20 09:00:00`
+  - `2025-11-20 09:15:00`
+  - `2025-11-20T09:00:00`
+- **Notes**: Can be in various date/time formats; the system will parse them automatically
 
 ### 2. `day_of_week` (Required)
 - **Type**: Integer
 - **Format**: Number 0-6
-- **Description**: Day of the week for this waypoint (used to automatically detect active days and to place the waypoint in the anchor week alongside the time-of-day)
+- **Description**: Day of the week for this waypoint (used to automatically detect active days)
 - **Values**:
   - `0` = Monday
   - `1` = Tuesday
@@ -113,10 +113,10 @@ Here's a complete example showing all columns:
 
 | timestamp | day_of_week | address | latitude | longitude | sequence | is_parking | parking_duration_minutes | notes |
 |-----------|-------------|---------|----------|-----------|----------|------------|-------------------------|-------|
-| 09:00:00 | 2 | F-10 Markaz, Islamabad, Pakistan | 33.6844 | 73.0479 | 1 | FALSE | | Normal movement |
-| 09:15:00 | 2 | Blue Area, Islamabad | 33.693 | 73.065 | 2 | FALSE | | Normal movement |
-| 09:30:00 | 2 | F-6 Markaz, Islamabad | 33.709 | 73.0525 | 3 | TRUE | 20 | Parking stop |
-| 09:45:00 | 2 | F-8 Markaz, Islamabad | | | 4 | FALSE | | Normal movement |
+| 2025-11-20 09:00:00 | 2 | F-10 Markaz, Islamabad, Pakistan | 33.6844 | 73.0479 | 1 | FALSE | | Normal movement |
+| 2025-11-20 09:15:00 | 2 | Blue Area, Islamabad | 33.693 | 73.065 | 2 | FALSE | | Normal movement |
+| 2025-11-20 09:30:00 | 2 | F-6 Markaz, Islamabad | 33.709 | 73.0525 | 3 | TRUE | 20 | Parking stop |
+| 2025-11-20 09:45:00 | 2 | F-8 Markaz, Islamabad | | | 4 | FALSE | | Normal movement |
 
 ## Minimal Example (Only Required Columns)
 
@@ -124,9 +124,9 @@ You can create a route with just the required columns:
 
 | timestamp | day_of_week | address |
 |-----------|-------------|---------|
-| 09:00:00 | 2 | F-10 Markaz, Islamabad, Pakistan |
-| 09:15:00 | 2 | Blue Area, Islamabad |
-| 09:30:00 | 2 | F-6 Markaz, Islamabad |
+| 2025-11-20 09:00:00 | 2 | F-10 Markaz, Islamabad, Pakistan |
+| 2025-11-20 09:15:00 | 2 | Blue Area, Islamabad |
+| 2025-11-20 09:30:00 | 2 | F-6 Markaz, Islamabad |
 
 The system will automatically:
 - Geocode addresses to get coordinates
@@ -151,7 +151,7 @@ The system is case-insensitive and will normalize column names. These are all va
 
 1. **Address Geocoding**: If you don't provide coordinates, make sure your addresses are clear and complete to ensure accurate geocoding.
 
-2. **Day of Week + Time**: `day_of_week` + `timestamp` are mapped into a synthetic anchor week (Mon = 2024-01-01) so routes can replay every week without relying on real calendar dates.
+2. **Day of Week**: The `day_of_week` column determines which days the route is active. The system automatically sets the route's active days based on the unique values in this column.
 
 3. **Multiple Days**: You can include waypoints for multiple days in one file. Just use different `day_of_week` values.
 

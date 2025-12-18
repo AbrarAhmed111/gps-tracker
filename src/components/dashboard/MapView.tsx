@@ -19,8 +19,10 @@ export type VehicleMarker = {
   bearing?: number
   nextTarget?: { lat: number; lng: number }
   etaToNextMs?: number
-  waypoints?: Array<{ lat: number; lng: number; sequence: number }>
+  waypoints?: Array<{ lat: number; lng: number; sequence: number; original_address?: string | null; is_parking?: boolean }>
 }
+
+type VehicleWaypoint = NonNullable<VehicleMarker['waypoints']>[number]
 
 type MapViewProps = {
   vehicles: VehicleMarker[]
@@ -240,7 +242,7 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
         if (dist < minDist) {
           minDist = dist
           currentIndex = i
-        }
+      }
       }
     }
     
@@ -253,6 +255,50 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
     }
     
     return null
+  }
+
+  // Find nearest waypoint (by haversine) for labeling
+  const findNearestWaypoint = (
+    vehicle: VehicleMarker,
+    position: { lat: number; lng: number }
+  ): { wp: VehicleWaypoint; distanceKm: number } | null => {
+    if (!vehicle.waypoints || vehicle.waypoints.length === 0) return null
+    let best: VehicleWaypoint | null = null
+    let minDist = Infinity
+    for (const wp of vehicle.waypoints) {
+      if (typeof wp.lat !== 'number' || typeof wp.lng !== 'number') continue
+      const dist = haversineDistance(position.lat, position.lng, wp.lat, wp.lng)
+      if (dist < minDist) {
+        minDist = dist
+        best = wp
+      }
+    }
+    return best ? { wp: best, distanceKm: minDist } : null
+  }
+
+  const findWaypointByPosition = (
+    vehicle: VehicleMarker,
+    position: { lat: number; lng: number },
+    thresholdKm = 0.2
+  ): VehicleWaypoint | null => {
+    const nearest = findNearestWaypoint(vehicle, position)
+    if (nearest && nearest.distanceKm <= thresholdKm) return nearest.wp
+    return nearest ? nearest.wp : null
+  }
+
+  const statusLabel = (vehicle: VehicleMarker): string => {
+    const currentPos = { lat: vehicle.lat, lng: vehicle.lng }
+    if (vehicle.status === 'moving') {
+      const targetWp = vehicle.nextTarget ? findWaypointByPosition(vehicle, vehicle.nextTarget) : null
+      const fallback = findNearestWaypoint(vehicle, currentPos)?.wp
+      const label = targetWp?.original_address || fallback?.original_address
+      return label ? `Moving towards ${label}` : 'Moving towards next stop'
+    }
+    if (vehicle.status === 'parked') {
+      const nearest = findNearestWaypoint(vehicle, currentPos)?.wp
+      return nearest?.original_address ? `Parked at ${nearest.original_address}` : 'Parked'
+    }
+    return ''
   }
 
   useEffect(() => {
@@ -322,10 +368,6 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
               <div style="font-weight:600;margin-bottom:4px">${v.name}</div>
               ${v.vehicleNumber ? `<div style="font-size:12px;color:#4b5563">No: ${v.vehicleNumber}</div>` : ''}
               ${v.vehicleType ? `<div style="font-size:12px;color:#4b5563">Type: ${v.vehicleType}</div>` : ''}
-              <div style="font-size:12px;color:#4b5563">Status: ${v.status}</div>
-              <div style="font-size:12px;color:#4b5563">Pos: ${v.lat.toFixed(5)}, ${v.lng.toFixed(5)}</div>
-              ${typeof v.speedKmh === 'number' ? `<div style="font-size:12px;color:#4b5563">Speed: ${v.speedKmh.toFixed(1)} km/h</div>` : ''}
-              ${typeof v.etaNextMinutes === 'number' ? `<div style="font-size:12px;color:#4b5563">ETA: ${v.etaNextMinutes.toFixed(1)} min</div>` : ''}
               ${v.lastUpdated ? `<div style="font-size:12px;color:#6b7280">Updated: ${new Date(v.lastUpdated).toLocaleTimeString()}</div>` : ''}
             </div>
           `
