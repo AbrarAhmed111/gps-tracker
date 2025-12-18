@@ -710,8 +710,8 @@ export default function RoutesPage() {
                 <div className="mt-2 rounded-lg border border-dashed border-gray-200 dark:border-neutral-700 bg-gray-50 dark:bg-neutral-800/40 p-3">
                   <p className="text-[11px] font-semibold text-gray-700 dark:text-neutral-200">Excel requirements</p>
                   <ul className="mt-1 space-y-1 text-[11px] text-gray-600 dark:text-neutral-400 list-disc pl-4">
-                    <li><span className="font-medium text-red-600 dark:text-red-400">timestamp</span> – <strong>Required</strong>. ISO 8601 or <code>YYYY-MM-DD HH:MM:SS</code></li>
-                    <li><span className="font-medium text-red-600 dark:text-red-400">day_of_week</span> – <strong>Required</strong>. Number 0 (Mon) → 6 (Sun) used to detect active days automatically</li>
+                    <li><span className="font-medium text-red-600 dark:text-red-400">timestamp</span> – <strong>Required</strong>. Time of day only; use <code>HH:MM</code> or <code>HH:MM:SS</code>. Any date part is ignored because routes repeat weekly.</li>
+                    <li><span className="font-medium text-red-600 dark:text-red-400">day_of_week</span> – <strong>Required</strong>. Number 0 (Mon) → 6 (Sun) used to detect active days automatically (weekly repeat, not tied to calendar dates).</li>
                     <li><span className="font-medium text-red-600 dark:text-red-400">address</span> – <strong>Required</strong>. Will be geocoded to get coordinates if latitude/longitude are not provided</li>
                     <li><span className="font-medium">latitude</span> / <span className="font-medium">longitude</span> – <em>Optional</em>. Decimal degrees (-90..90 / -180..180). If missing, address will be geocoded</li>
                     <li><span className="font-medium">sequence</span> – <em>Optional</em>. Order per day (defaults to row order if missing)</li>

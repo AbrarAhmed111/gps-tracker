@@ -149,7 +149,15 @@ export default function Home() {
       // Group waypoints by route_id
       const routeIdToWaypoints = new Map<
         string,
-        Array<{ sequence: number; latitude: number; longitude: number; timestamp: string; day_of_week: number; is_parking?: boolean }>
+        Array<{
+          sequence: number
+          latitude: number
+          longitude: number
+          timestamp: string
+          day_of_week: number
+          is_parking?: boolean
+          original_address?: string | null
+        }>
       >()
       for (const w of waypoints ?? []) {
         // @ts-ignore
@@ -171,6 +179,8 @@ export default function Home() {
           day_of_week: (w.day_of_week ?? 0) as number,
           // @ts-ignore
           is_parking: Boolean(w.is_parking),
+          // @ts-ignore
+          original_address: w.original_address || null,
         })
       }
       // Prepare simulation batch request
