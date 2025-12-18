@@ -19,6 +19,8 @@ export type VehicleMarker = {
   bearing?: number
   nextTarget?: { lat: number; lng: number }
   etaToNextMs?: number
+  currentRoadPath?: Array<{ lat: number; lng: number }>
+  segmentDurationMs?: number | null
   waypoints?: Array<{ lat: number; lng: number; sequence: number; original_address?: string | null; is_parking?: boolean }>
 }
 
@@ -93,14 +95,43 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
     return total
   }
 
-  // Get road path between two points using Google Directions API
+  const densifyPath = (path: any[], maxSegmentMeters = 10): any[] => {
+    if (!path || path.length < 2) return path || []
+    const out: any[] = []
+    const getLat = (p: any) => (typeof p.lat === 'function' ? p.lat() : p.lat)
+    const getLng = (p: any) => (typeof p.lng === 'function' ? p.lng() : p.lng)
+    for (let i = 0; i < path.length - 1; i++) {
+      const start = path[i]
+      const end = path[i + 1]
+      const lat1 = getLat(start)
+      const lng1 = getLng(start)
+      const lat2 = getLat(end)
+      const lng2 = getLng(end)
+      out.push({ lat: lat1, lng: lng1 })
+      const distKm = haversineDistance(lat1, lng1, lat2, lng2)
+      const distM = distKm * 1000
+      if (distM > maxSegmentMeters && distKm > 0) {
+        const steps = Math.ceil(distM / maxSegmentMeters)
+        for (let s = 1; s < steps; s++) {
+          const t = s / steps
+          out.push({
+            lat: lat1 + (lat2 - lat1) * t,
+            lng: lng1 + (lng2 - lng1) * t,
+          })
+        }
+      }
+    }
+    const last = path[path.length - 1]
+    out.push({ lat: getLat(last), lng: getLng(last) })
+    return out
+  }
+
+  // Get road path between two points using Google Directions API (cache for stability)
   const getRoadPath = async (
     from: { lat: number; lng: number },
     to: { lat: number; lng: number }
   ): Promise<any[] | null> => {
     const cacheKey = `${from.lat.toFixed(6)},${from.lng.toFixed(6)}_${to.lat.toFixed(6)},${to.lng.toFixed(6)}`
-    
-    // Check cache first
     if (roadPathsCache.current.has(cacheKey)) {
       return roadPathsCache.current.get(cacheKey)!
     }
@@ -122,13 +153,25 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
             if (status === window.google.maps.DirectionsStatus.OK && result) {
               const path: any[] = []
               const route = result.routes[0]
-              if (route && route.overview_path) {
+              // Prefer high-resolution path from legs/steps, fallback to overview_path
+              if (route && route.legs && route.legs.length > 0) {
+                route.legs.forEach((leg: any) => {
+                  leg.steps?.forEach((step: any) => {
+                    if (step.path && step.path.length > 0) {
+                      step.path.forEach((pt: any) => path.push(pt))
+                    }
+                  })
+                })
+              }
+              if (path.length === 0 && route && route.overview_path) {
                 route.overview_path.forEach((point: any) => {
                   path.push(point)
                 })
-                // Cache the path
-                roadPathsCache.current.set(cacheKey, path)
-                resolve(path)
+              }
+              if (path.length > 0) {
+                const dense = densifyPath(path, 10) // ~10m spacing for smoother, more accurate interpolation
+                roadPathsCache.current.set(cacheKey, dense)
+                resolve(dense)
               } else {
                 resolve(null)
               }
@@ -397,11 +440,15 @@ export default function MapView({ vehicles, focusRequest }: MapViewProps) {
       if (v.status === 'moving' && v.nextTarget) {
         const fromCoord = startPosition
         const toCoord = v.nextTarget
-        getRoadPath(fromCoord, toCoord).then(roadPath => {
+        const providedPath = v.currentRoadPath && v.currentRoadPath.length > 1 ? v.currentRoadPath : null
+        const pathPromise = providedPath ? Promise.resolve(providedPath) : getRoadPath(fromCoord, toCoord)
+        pathPromise.then(roadPath => {
           const durationMsPromise =
             v.etaToNextMs && v.etaToNextMs > 0
               ? Promise.resolve(v.etaToNextMs)
-              : calculateAnimationDuration(fromCoord, toCoord, v.speedKmh, roadPath)
+              : v.segmentDurationMs && v.segmentDurationMs > 0
+                ? Promise.resolve(v.segmentDurationMs)
+                : calculateAnimationDuration(fromCoord, toCoord, v.speedKmh, roadPath)
           durationMsPromise.then(durationMs => {
             animStatesRef.current.set(v.id, {
               from: fromCoord,

@@ -28,6 +28,8 @@ type Vehicle = {
   bearing?: number
   nextTarget?: { lat: number; lng: number } | null
   etaToNextMs?: number | null
+  currentRoadPath?: Array<{ lat: number; lng: number }>
+  segmentDurationMs?: number | null
   waypoints?: Array<{ lat: number; lng: number; sequence: number; original_address?: string | null; is_parking?: boolean }>
 }
 
@@ -246,6 +248,8 @@ export default function Home() {
           let bearingDeg: number | undefined
           let nextTarget: { lat: number; lng: number } | null = null
           let etaToNextMs: number | null = null
+          let currentRoadPath: Array<{ lat: number; lng: number }> | undefined
+          let segmentDurationMs: number | null = null
           if (pos) {
             const s = (pos.status || '').toString().toLowerCase()
             if (s === 'parked' || s === 'completed' || s === 'not_started') status = 'parked'
@@ -274,6 +278,9 @@ export default function Home() {
               etaNextMinutes = eta.minutes_to_next_waypoint
               etaToNextMs = eta.minutes_to_next_waypoint * 60 * 1000
             }
+            if (eta && typeof eta.seconds_to_next_waypoint === 'number') {
+              etaToNextMs = eta.seconds_to_next_waypoint * 1000
+            }
             const prog = pos.route_progress
             if (prog && typeof prog.overall_progress_percent === 'number') {
               progressPercent = prog.overall_progress_percent
@@ -285,6 +292,13 @@ export default function Home() {
                 lat: segTo.latitude,
                 lng: segTo.longitude,
               }
+            }
+            const segRoadPath = currentSeg?.road_path
+            if (Array.isArray(segRoadPath) && segRoadPath.length > 0) {
+              currentRoadPath = segRoadPath
+            }
+            if (typeof currentSeg?.segment_duration_seconds === 'number' && Number.isFinite(currentSeg.segment_duration_seconds)) {
+              segmentDurationMs = currentSeg.segment_duration_seconds * 1000
             }
           }
           // If simulation did not return a position but route has waypoints, fall back to first waypoint
@@ -338,6 +352,8 @@ export default function Home() {
             bearing: bearingDeg,
             nextTarget,
             etaToNextMs,
+            currentRoadPath,
+            segmentDurationMs,
             waypoints: vehicleWaypoints,
           }
         }) ?? []
