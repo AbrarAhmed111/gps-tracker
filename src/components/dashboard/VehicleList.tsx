@@ -17,8 +17,6 @@ type VehicleListItem = {
   progressPercent?: number
   vehicleNumber?: string
   vehicleType?: string
-  parkedReason?: string
-  parkedUntil?: string | null
 }
 
 type VehicleListProps = {
@@ -36,13 +34,6 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
   const [open, setOpen] = useState<boolean>(true)
   const activeVehicles = vehicles.filter(v => v.status !== 'inactive')
   const inactiveVehicles = vehicles.filter(v => v.status === 'inactive')
-
-  const formatTime = (iso?: string | null) => {
-    if (!iso) return ''
-    const d = new Date(iso)
-    if (Number.isNaN(d.getTime())) return ''
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  }
 
   return (
     <aside className="h-full flex flex-col">
@@ -126,7 +117,7 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
                   <span className="capitalize">
                     {v.status.replace('-', ' ')}
                   </span>{' '}
-                  • Route: {v.routeLabel ?? '—'}
+                  • Tag: {v.routeLabel ? 'Set' : '—'}
                 </p>
                 {typeof v.lat === 'number' && typeof v.lng === 'number' ? (
                   <p>
@@ -136,20 +127,14 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
                   <p>Pos: —</p>
                 )}
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-                  {v.speedKmh != null && (
+                  {/* {v.speedKmh != null && (
                     <span>Speed: {v.speedKmh.toFixed(1)} km/h</span>
                   )}
-                  {/* {v.etaNextMinutes != null && (
+                  {v.etaNextMinutes != null && (
                     <span>ETA next: {v.etaNextMinutes.toFixed(1)} min</span>
-                  )}
-                  */}
+                  )} */}
+                 
                 </div>
-                {v.status === 'parked' && (
-                  <p className="mt-1 text-[11px] text-gray-500 dark:text-neutral-500">
-                    {v.parkedReason || 'Parked'}
-                    {v.parkedUntil ? ` • Next move at ${formatTime(v.parkedUntil)} (local)` : ''}
-                  </p>
-                )}
                 {/* {typeof v.progressPercent === 'number' && (
                   <div className="mt-2">
                     <div className="h-1.5 w-full rounded bg-gray-200 dark:bg-neutral-800 overflow-hidden">
@@ -199,15 +184,12 @@ export default function VehicleList({ vehicles, onFocus }: VehicleListProps) {
                   <span className="text-[11px] text-gray-500 dark:text-neutral-400">Not visible on map</span>
                 </div>
                 <div className="mt-1 text-xs text-gray-600 dark:text-neutral-400">
-                  <p>Status: Inactive • Route: {v.routeLabel ?? '—'}</p>
+                <p>Status: Inactive • Tag: {v.routeLabel ? 'Set' : '—'}</p>
                   {typeof v.lat === 'number' && typeof v.lng === 'number' ? (
                     <p>Last known pos: {v.lat.toFixed(4)}, {v.lng.toFixed(4)}</p>
                   ) : (
                     <p>Last known pos: —</p>
                   )}
-                  <p className="text-[11px] text-gray-500 dark:text-neutral-500">
-                  No active route is currently scheduled for this vehicle.
-                  </p>
                 </div>
               </li>
             ))}

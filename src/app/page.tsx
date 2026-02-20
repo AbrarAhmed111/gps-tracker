@@ -11,42 +11,6 @@ import { axiosInstance } from '@/utils/axios'
 
 const MAX_WAYPOINTS_PER_ROUTE = 500
 
-// Anchor all calculations to a synthetic week (Mon 2024-01-01) so routes replay weekly without real dates.
-const ANCHOR_WEEK_START = { year: 2024, monthIndex: 0, day: 1 }
-const toAnchorWeekIso = (mondayZeroDay: number, sourceDate: Date) => {
-  const safeDay = Number.isFinite(mondayZeroDay) ? Math.max(0, Math.min(6, mondayZeroDay)) : 0
-  const ms = Date.UTC(
-    ANCHOR_WEEK_START.year,
-    ANCHOR_WEEK_START.monthIndex,
-    ANCHOR_WEEK_START.day + safeDay,
-    sourceDate.getHours(),
-    sourceDate.getMinutes(),
-    sourceDate.getSeconds(),
-    sourceDate.getMilliseconds(),
-  )
-  return new Date(ms).toISOString()
-}
-
-const normalizeWaypointTimestamp = (rawTs: string | null | undefined, dayOfWeek: number, fallbackSource: Date) => {
-  const safeDay = Number.isFinite(dayOfWeek) ? Math.max(0, Math.min(6, dayOfWeek)) : 0
-  if (rawTs) {
-    const parsed = new Date(rawTs)
-    if (!Number.isNaN(parsed.getTime())) {
-      const anchoredMs = Date.UTC(
-        ANCHOR_WEEK_START.year,
-        ANCHOR_WEEK_START.monthIndex,
-        ANCHOR_WEEK_START.day + safeDay,
-        parsed.getHours(),
-        parsed.getMinutes(),
-        parsed.getSeconds(),
-        parsed.getMilliseconds(),
-      )
-      return new Date(anchoredMs).toISOString()
-    }
-  }
-  return toAnchorWeekIso(safeDay, fallbackSource)
-}
-
 type Vehicle = {
   id: string
   name: string
@@ -64,9 +28,9 @@ type Vehicle = {
   bearing?: number
   nextTarget?: { lat: number; lng: number } | null
   etaToNextMs?: number | null
-  waypoints?: Array<{ lat: number; lng: number; sequence: number }>
-  parkedReason?: string
-  parkedUntil?: string | null
+  currentRoadPath?: Array<{ lat: number; lng: number }>
+  segmentDurationMs?: number | null
+  waypoints?: Array<{ lat: number; lng: number; sequence: number; original_address?: string | null; is_parking?: boolean }>
 }
 
 export default function Home() {
@@ -105,6 +69,8 @@ export default function Home() {
       setMaintenanceMode(String(maint).toLowerCase() === 'true')
     }
   }, [])
+
+  const MAX_WAYPOINTS_PER_ROUTE = 500
 
   const loadData = useCallback(async () => {
     if (loadingRef.current) return
@@ -157,16 +123,25 @@ export default function Home() {
         return
       }
       const now = new Date()
-      const nowIso = now.toISOString()
+      const nowIsoReal = now.toISOString()
       const jsDay = now.getDay() // 0..6, 0=Sunday
       const mondayZeroDay = (jsDay + 6) % 7 // 0..6, 0=Monday
-      const anchorNowIso = toAnchorWeekIso(mondayZeroDay, now)
-      const anchorNowDate = new Date(anchorNowIso)
+      // Anchor current time to a fixed reference week so routes repeat weekly
+      const anchorMonday = new Date(Date.UTC(2024, 0, 1, 0, 0, 0))
+      const anchorCurrent = new Date(anchorMonday)
+      anchorCurrent.setUTCDate(anchorMonday.getUTCDate() + mondayZeroDay)
+      anchorCurrent.setUTCHours(
+        now.getUTCHours(),
+        now.getUTCMinutes(),
+        now.getUTCSeconds(),
+        now.getUTCMilliseconds()
+      )
+      const nowIso = anchorCurrent.toISOString()
 
       // Fetch waypoints for these routes (filtered to active day)
       const { data: waypoints } = await supabase
         .from('waypoints')
-        .select('route_id, sequence_number, latitude, longitude, timestamp, day_of_week, is_parking')
+        .select('route_id, sequence_number, latitude, longitude, timestamp, day_of_week, is_parking, original_address')
         .in('route_id', routeIds)
         .eq('day_of_week', mondayZeroDay)
         .order('sequence_number', { ascending: true })
@@ -174,7 +149,15 @@ export default function Home() {
       // Group waypoints by route_id
       const routeIdToWaypoints = new Map<
         string,
-        Array<{ sequence: number; latitude: number; longitude: number; timestamp: string; day_of_week: number; is_parking?: boolean }>
+        Array<{
+          sequence: number
+          latitude: number
+          longitude: number
+          timestamp: string
+          day_of_week: number
+          is_parking?: boolean
+          original_address?: string | null
+        }>
       >()
       for (const w of waypoints ?? []) {
         // @ts-ignore
@@ -185,7 +168,7 @@ export default function Home() {
         // @ts-ignore
         const lng = typeof w.longitude === 'number' ? w.longitude : Number(w.longitude)
         // @ts-ignore
-        const ts = normalizeWaypointTimestamp(w.timestamp as string, (w.day_of_week ?? mondayZeroDay) as number, now)
+        const ts = w.timestamp ? new Date(w.timestamp as string).toISOString() : new Date().toISOString()
         routeIdToWaypoints.get(key)!.push({
           // @ts-ignore
           sequence: w.sequence_number as number,
@@ -196,6 +179,8 @@ export default function Home() {
           day_of_week: (w.day_of_week ?? 0) as number,
           // @ts-ignore
           is_parking: Boolean(w.is_parking),
+          // @ts-ignore
+          original_address: w.original_address || null,
         })
       }
       // Prepare simulation batch request
@@ -215,7 +200,7 @@ export default function Home() {
             flags.sunday
           return {
             vehicle_id: v.id,
-            current_time: anchorNowIso,
+            current_time: nowIso,
             day_of_week: mondayZeroDay,
             is_day_active: !!isActiveToday,
             waypoints: wps,
@@ -249,7 +234,7 @@ export default function Home() {
         throw new Error('Backend base URL not configured. Set NEXT_PUBLIC_BACKEND_BASE_URL.')
       }
       const simResp = await axiosInstance.post('/api/v1/simulation/calculate-positions-batch', {
-        current_time: anchorNowIso,
+        current_time: nowIso,
         vehicles: vehiclesPayload,
         interpolation_method: 'linear',
       })
@@ -263,7 +248,6 @@ export default function Home() {
         (vehiclesData ?? []).map(v => {
           const routeInfo = vehicleIdToRoute[v.id]
           const wps = routeInfo ? (routeIdToWaypoints.get(routeInfo.id) ?? []).slice(0, MAX_WAYPOINTS_PER_ROUTE) : []
-        const wpsSorted = [...wps].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
           const pos = posByVehicle.get(v.id)
           let status: Vehicle['status'] = 'inactive'
           let lat: number | undefined
@@ -274,8 +258,8 @@ export default function Home() {
           let bearingDeg: number | undefined
           let nextTarget: { lat: number; lng: number } | null = null
           let etaToNextMs: number | null = null
-        let parkedReason: string | undefined
-        let parkedUntil: string | null = null
+          let currentRoadPath: Array<{ lat: number; lng: number }> | undefined
+          let segmentDurationMs: number | null = null
           if (pos) {
             const s = (pos.status || '').toString().toLowerCase()
             if (s === 'parked' || s === 'completed' || s === 'not_started') status = 'parked'
@@ -304,6 +288,9 @@ export default function Home() {
               etaNextMinutes = eta.minutes_to_next_waypoint
               etaToNextMs = eta.minutes_to_next_waypoint * 60 * 1000
             }
+            if (eta && typeof eta.seconds_to_next_waypoint === 'number') {
+              etaToNextMs = eta.seconds_to_next_waypoint * 1000
+            }
             const prog = pos.route_progress
             if (prog && typeof prog.overall_progress_percent === 'number') {
               progressPercent = prog.overall_progress_percent
@@ -316,12 +303,12 @@ export default function Home() {
                 lng: segTo.longitude,
               }
             }
-            if (segTo?.timestamp) {
-              const ts = new Date(segTo.timestamp).toISOString()
-              if (status === 'parked') {
-                parkedReason = 'Waiting for next leg'
-                parkedUntil = ts
-              }
+            const segRoadPath = currentSeg?.road_path
+            if (Array.isArray(segRoadPath) && segRoadPath.length > 0) {
+              currentRoadPath = segRoadPath
+            }
+            if (typeof currentSeg?.segment_duration_seconds === 'number' && Number.isFinite(currentSeg.segment_duration_seconds)) {
+              segmentDurationMs = currentSeg.segment_duration_seconds * 1000
             }
           }
           // If simulation did not return a position but route has waypoints, fall back to first waypoint
@@ -348,30 +335,10 @@ export default function Home() {
                 lat: wp.latitude,
                 lng: wp.longitude,
                 sequence: wp.sequence,
+                original_address: wp.original_address || undefined,
+                is_parking: wp.is_parking || false,
               }))
             : undefined
-
-        // Derive parked reason/time if parked or inactive but has schedule
-        if (wpsSorted.length === 0) {
-          if (status === 'parked' || status === 'inactive') {
-            parkedReason = 'No waypoints scheduled today'
-          }
-        } else {
-          const firstTs = new Date(wpsSorted[0].timestamp)
-          const lastTs = new Date(wpsSorted[wpsSorted.length - 1].timestamp)
-          if (anchorNowDate < firstTs) {
-            parkedReason = 'Route not started yet'
-            parkedUntil = firstTs.toISOString()
-            if (status === 'inactive') status = 'parked'
-          } else if (anchorNowDate > lastTs) {
-            if (status !== 'moving') {
-              status = 'parked'
-              parkedReason = 'Route finished for today'
-            }
-          } else if (status === 'parked' && !parkedReason) {
-            parkedReason = 'Holding until next segment'
-          }
-        }
 
           return {
             id: v.id,
@@ -383,6 +350,8 @@ export default function Home() {
             color: v.color || undefined,
             routeLabel: routeInfo?.name ?? '—',
             lastUpdated: batchTimestamp || nowIso,
+            // Use the real clock time for UI freshness
+            ...(batchTimestamp ? {} : { lastUpdated: nowIsoReal }),
             speedKmh,
             etaNextMinutes,
             progressPercent,
@@ -393,9 +362,9 @@ export default function Home() {
             bearing: bearingDeg,
             nextTarget,
             etaToNextMs,
+            currentRoadPath,
+            segmentDurationMs,
             waypoints: vehicleWaypoints,
-            parkedReason,
-            parkedUntil,
           }
         }) ?? []
       setVehicles(compiled)
