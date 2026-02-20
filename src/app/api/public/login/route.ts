@@ -28,6 +28,7 @@ export async function POST(request: Request) {
     const { data, error } = await admin
       .from('public_access')
       .select('password_hash')
+      .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle()
     if (error) throw error

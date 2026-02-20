@@ -2,8 +2,8 @@
 
 import Image from 'next/image'
 import logo from '@/assets/img/trasnparent-logo.png'
-import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { clientSignout } from '@/lib/auth/signout'
 
 type AdminHeaderProps = {
   title?: string
@@ -18,8 +18,13 @@ export default function AdminHeader({
 }: AdminHeaderProps) {
   const router = useRouter()
   async function signOut() {
-    const supabase = createClient()
-    await supabase.auth.signOut()
+    // Best-effort: also clear any public access cookie so logging out is consistent.
+    try {
+      await fetch('/api/public/logout', { method: 'POST' })
+    } catch {
+      // ignore
+    }
+    await clientSignout()
     router.replace('/admin/signin')
     router.refresh()
   }

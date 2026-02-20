@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'react-hot-toast'
-import bcrypt from 'bcryptjs'
 
 type LoginLog = {
   id: string
@@ -21,6 +20,9 @@ export default function PublicUsersPage() {
   const [confirm, setConfirm] = useState<string>('')
   const [show, setShow] = useState<boolean>(false)
   const [updatedAt, setUpdatedAt] = useState<string | null>(null)
+  const [currentPassword, setCurrentPassword] = useState<string | null>(null)
+  const [passwordKeyConfigured, setPasswordKeyConfigured] =
+    useState<boolean>(false)
   const [search, setSearch] = useState<string>('')
 
   const filtered = useMemo(() => {
@@ -38,14 +40,19 @@ export default function PublicUsersPage() {
     async function load() {
       setLoading(true)
       const supabase = createClient()
-      // Load last updated time
-      const { data: pa, error: errPA } = await supabase
-        .from('public_access')
-        .select('updated_at')
-        .limit(1)
-        .maybeSingle()
-      if (active) {
-        if (!errPA && pa?.updated_at) setUpdatedAt(pa.updated_at)
+      // Load current public password + last updated time (admin-only API)
+      try {
+        const res = await fetch('/api/admin/public-users/password', {
+          cache: 'no-store',
+        })
+        const json = await res.json().catch(() => ({} as any))
+        if (active && res.ok) {
+          setUpdatedAt(json?.updatedAt ?? null)
+          setCurrentPassword(json?.password ?? null)
+          setPasswordKeyConfigured(Boolean(json?.passwordKeyConfigured))
+        }
+      } catch {
+        // ignore - page can still function without showing current password
       }
       // Load latest logs
       const { data, error } = await supabase
@@ -78,26 +85,18 @@ export default function PublicUsersPage() {
     }
     try {
       setSaving(true)
-      const salt = await bcrypt.genSalt(10)
-      const hash = await bcrypt.hash(password, salt)
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      const { error } = await supabase.from('public_access').upsert(
-        [
-          {
-            // Single row table; upsert will create or overwrite one record
-            password_hash: hash,
-            updated_by: user?.id ?? null,
-          },
-        ],
-        { onConflict: 'id' },
-      )
-      if (error) throw error
+      const res = await fetch('/api/admin/public-users/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      })
+      const json = await res.json().catch(() => ({} as any))
+      if (!res.ok) throw new Error(json?.error || 'Failed to update password')
       setPassword('')
       setConfirm('')
-      setUpdatedAt(new Date().toISOString())
+      setUpdatedAt(json?.updatedAt ?? new Date().toISOString())
+      setCurrentPassword(password)
+      setPasswordKeyConfigured(Boolean(json?.passwordKeyConfigured))
       toast.success('Public password updated')
     } catch (e: any) {
       toast.error(e?.message || 'Failed to update password')
@@ -124,6 +123,22 @@ export default function PublicUsersPage() {
         <p className="text-xs text-gray-600 dark:text-neutral-400">
           This affects the password users enter for public dashboard access.
         </p>
+        <div className="mt-3">
+          <label className="block text-xs text-gray-600 dark:text-neutral-400 mb-1">
+            Current password (admin only)
+          </label>
+          <input
+            type={show ? 'text' : 'password'}
+            value={
+              currentPassword ??
+              (passwordKeyConfigured
+                ? '—'
+                : 'Not available (set PUBLIC_ACCESS_PASSWORD_KEY)')
+            }
+            readOnly
+            className="w-full rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          />
+        </div>
         <div className="mt-2">
           <button
             onClick={async () => {

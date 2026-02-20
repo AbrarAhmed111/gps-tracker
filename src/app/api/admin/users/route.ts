@@ -1,7 +1,32 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createServerClient } from '@/lib/supabase/server'
+
+async function requireAdmin() {
+  const supabase = await createServerClient()
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser()
+  if (error || !user) {
+    return { ok: false as const, res: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
+  }
+  const admin = createAdminClient()
+  const { data: profile } = await admin
+    .from('admin_profiles')
+    .select('id, is_active')
+    .eq('id', user.id)
+    .maybeSingle()
+  if (!profile?.id || profile.is_active === false) {
+    return { ok: false as const, res: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
+  }
+  return { ok: true as const, userId: user.id }
+}
 
 export async function POST(request: Request) {
+  const auth = await requireAdmin()
+  if (!auth.ok) return auth.res
+
   try {
     const body = await request.json()
     const { email, password, full_name, username, is_active } = body || {}
@@ -53,6 +78,9 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const auth = await requireAdmin()
+  if (!auth.ok) return auth.res
+
   try {
     const url = new URL(request.url)
     const id = url.searchParams.get('id')

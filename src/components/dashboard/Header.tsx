@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import { useEffect, useMemo, useState } from 'react'
 import logo from '@/assets/img/trasnparent-logo.png'
+import { clientSignout } from '@/lib/auth/signout'
 
 type HeaderProps = {
   title?: string
@@ -123,6 +124,8 @@ export default function Header({
             onClick={async () => {
               try {
                 await fetch('/api/public/logout', { method: 'POST' })
+                // If an admin is signed in, sign them out too (public logout should fully log out).
+                await clientSignout()
                 window.location.reload()
               } catch {
                 window.location.reload()
