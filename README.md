@@ -1,210 +1,161 @@
-# Jazzi Creates Clone
+# GPS Tracking Dashboard
 
-A modern Next.js TypeScript application built with the latest web technologies
-and best practices.
+A Next.js dashboard for monitoring simulated vehicle routes on a live map. The app combines a password-protected public tracking view with an admin panel for managing vehicles, route files, public access, and system settings.
 
-## 🚀 Features
+## Overview
 
-- **Next.js 15** with App Router
-- **TypeScript** for type safety
-- **Tailwind CSS** for styling
-- **Redux Toolkit** for state management
-- **React Icons** for beautiful icons
-- **Framer Motion** for animations
-- **React Hot Toast** for notifications
-- **ESLint & Prettier** for code quality
-- **Husky & lint-staged** for pre-commit hooks
-- **Jest & Testing Library** for testing
-- **Commitlint** for conventional commits
+GPS Tracking Dashboard is built for route simulation and fleet monitoring workflows. Admin users upload route data from Excel files, assign routes to vehicles, and configure access. Public users can then view vehicle positions, statuses, and smooth movement on a Google Maps based dashboard.
 
-## 📋 Prerequisites
+The frontend stores application data in Supabase and calls a backend simulation API for Excel processing and vehicle position calculations.
 
-Before you begin, ensure you have the following installed:
+## Features
 
-- [Node.js](https://nodejs.org/) (version 18 or higher)
-- [npm](https://www.npmjs.com/) or [yarn](https://yarnpkg.com/)
+- Public dashboard protected by a shared access password.
+- Google Maps view with live vehicle markers, status indicators, and focus controls.
+- Smooth vehicle animation using waypoint progression, distance calculations, and route interpolation.
+- Admin authentication with Supabase Auth.
+- Vehicle management for names, numbers, types, colors, and active status.
+- Route management with Excel upload, route activation, weekday scheduling, and waypoint storage.
+- Public user management, password updates, and force logout support.
+- System settings for app name, refresh interval, maintenance mode, and map/API configuration.
+- Dark mode friendly UI built with Tailwind CSS.
 
-## 🛠️ Installation
+## Tech Stack
 
-1. **Clone the repository**
+- Next.js 15 with App Router
+- React 18
+- TypeScript
+- Tailwind CSS
+- Supabase Auth and Database
+- Google Maps JavaScript API
+- Axios for backend API calls
+- Redux Toolkit
+- Jest and Testing Library
+- ESLint, Prettier, Husky, and lint-staged
 
-   ```bash
-   git clone <repository-url>
-   cd jazzi-creates-clone
-   ```
+## Requirements
 
-2. **Install dependencies**
+- Node.js 18 or newer
+- npm
+- Supabase project with the required tables and auth configuration
+- Google Maps API key stored in system settings
+- Backend API for Excel processing and simulation calculations
 
-   ```bash
-   npm install
-   # or
-   yarn install
-   ```
+## Environment Variables
 
-3. **Set up environment variables**
+Create a `.env.local` file in the project root:
 
-   ```bash
-   cp .env.example .env.local
-   ```
+```env
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
+NEXT_PUBLIC_BACKEND_BASE_URL=http://localhost:8000
 
-   Edit `.env.local` with your configuration values.
-
-4. **Start the development server**
-
-   ```bash
-   npm run dev
-   # or
-   yarn dev
-   ```
-
-5. **Open your browser** Navigate to
-   [http://localhost:3000](http://localhost:3000)
-
-## 📜 Available Scripts
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run start` - Start production server
-- `npm run lint` - Run ESLint with auto-fix
-- `npm run format` - Format code with Prettier
-- `npm run test` - Run tests
-- `npm run test:watch` - Run tests in watch mode
-
-## 🏗️ Project Structure
-
+# Optional
+BACKEND_BASE_URL=http://localhost:8000
+NEXT_PUBLIC_AUTH_DEBUG=false
 ```
+
+Important: `SUPABASE_SERVICE_ROLE_KEY` must stay server-side only. Do not expose it in client code or commit it to source control.
+
+## Getting Started
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start the development server:
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+Build for production:
+
+```bash
+npm run build
+npm run start
+```
+
+## App Routes
+
+| Route | Description |
+| --- | --- |
+| `/` | Public GPS tracking dashboard |
+| `/admin/signin` | Admin sign in |
+| `/admin` | Admin dashboard |
+| `/admin/vehicles` | Manage vehicles |
+| `/admin/routes` | Upload and manage routes |
+| `/admin/public-users` | Manage public dashboard access |
+| `/admin/users` | Manage admin users |
+| `/admin/settings` | Configure system settings |
+
+## Route Upload Format
+
+Routes are uploaded from Excel files and processed by the backend API. Required columns:
+
+| Column | Description |
+| --- | --- |
+| `timestamp` | Scheduled time for the waypoint |
+| `day_of_week` | Number from `0` to `6`, where Monday is `0` and Sunday is `6` |
+| `address` | Address used for geocoding when coordinates are missing |
+
+Optional columns include `latitude`, `longitude`, `sequence`, `is_parking`, `parking_duration_minutes`, and `notes`.
+
+See `docs/excel-format-specification.md` for the complete file format.
+
+## Backend API Integration
+
+The frontend expects the backend base URL in `NEXT_PUBLIC_BACKEND_BASE_URL`. Current integrations include:
+
+- `POST /api/v1/excel/process` for parsing uploaded Excel route files.
+- `POST /api/v1/simulation/calculate-positions-batch` for calculating current vehicle positions.
+
+If this variable is missing, route uploads and live simulation data will fail.
+
+## Project Structure
+
+```text
 src/
-├── app/                 # Next.js App Router pages
-│   ├── error.tsx       # Error boundary
-│   ├── layout.tsx      # Root layout
-│   ├── not-found.tsx   # 404 page
-│   └── page.tsx        # Home page
-├── assets/             # Static assets
-│   ├── css/           # Global styles
-│   └── img/           # Images
-├── components/         # Reusable components
-│   └── global/        # Global components
-├── store/             # Redux store configuration
-│   ├── Providers.tsx  # Store providers
-│   └── sample/        # Example Redux slices
-└── utils/             # Utility functions
-    └── axios.ts       # Axios configuration
+  app/                 Next.js App Router pages and API routes
+  app/admin/           Admin authentication and dashboard pages
+  app/api/             Public and admin API handlers
+  components/          Dashboard, admin, and auth UI components
+  lib/                 Supabase clients, auth helpers, and shared types
+  store/               Redux store setup
+  utils/               Shared utilities such as Axios configuration
+  assets/              Global styles and static assets
+docs/
+  excel-format-specification.md
+  user-flow.md
+  dynamic-animation-feature.md
 ```
 
-## 🎨 Styling
-
-This project uses **Tailwind CSS** for styling. The configuration is in
-`tailwind.config.ts`.
-
-### Custom CSS Classes
-
-- Global styles are in `src/assets/css/globals.css`
-- Component-specific styles can be added using Tailwind's utility classes
-
-## 🔧 Configuration Files
-
-- `next.config.mjs` - Next.js configuration
-- `tailwind.config.ts` - Tailwind CSS configuration
-- `tsconfig.json` - TypeScript configuration
-- `jest.config.js` - Jest testing configuration
-- `commitlint.config.js` - Commit message linting
-- `release-please-config.json` - Release automation
-
-## 🧪 Testing
-
-The project includes Jest and React Testing Library for testing:
+## Scripts
 
 ```bash
-# Run all tests
-npm run test
-
-# Run tests in watch mode
-npm run test:watch
+npm run dev          # Start local development
+npm run build        # Create a production build
+npm run start        # Start the production server
+npm run lint         # Run ESLint with autofix
+npm run format       # Format files with Prettier
+npm run test         # Run tests
+npm run test:watch   # Run tests in watch mode
 ```
 
-## 📦 Dependencies
+## Documentation
 
-### Core Dependencies
+- `docs/user-flow.md` explains the public and admin workflows.
+- `docs/excel-format-specification.md` documents supported route upload columns.
+- `docs/dynamic-animation-feature.md` explains the smooth vehicle animation behavior.
 
-- **Next.js 15** - React framework
-- **React 18** - UI library
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Utility-first CSS framework
+## Notes
 
-### State Management
-
-- **Redux Toolkit** - State management
-- **React Redux** - React bindings for Redux
-
-### UI & UX
-
-- **React Icons** - Icon library
-- **Framer Motion** - Animation library
-- **React Hot Toast** - Toast notifications
-- **React Toastify** - Additional toast functionality
-
-### Development Tools
-
-- **ESLint** - Code linting
-- **Prettier** - Code formatting
-- **Husky** - Git hooks
-- **lint-staged** - Pre-commit linting
-- **Commitlint** - Commit message validation
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Commit Convention
-
-This project follows
-[Conventional Commits](https://www.conventionalcommits.org/):
-
-- `feat:` - New features
-- `fix:` - Bug fixes
-- `docs:` - Documentation changes
-- `style:` - Code style changes
-- `refactor:` - Code refactoring
-- `test:` - Test changes
-- `chore:` - Build process or auxiliary tool changes
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
-for details.
-
-## 🆘 Support
-
-If you encounter any issues or have questions:
-
-1. Check the [Issues](https://github.com/your-repo/issues) page
-2. Create a new issue with detailed information
-3. Contact the maintainers
-
-## 🔄 Updates
-
-To keep your project up to date:
-
-```bash
-# Update dependencies
-npm update
-
-# Check for outdated packages
-npm outdated
-
-# Update to latest versions (use with caution)
-npm update --latest
-```
-
----
-
-**Happy coding! 🎉**
-
-## 📚 Documentation
-
-- User Flow: see `docs/user-flow.md` for detailed Public and Admin flows, API
-  interactions, and scenarios.
+- Public dashboard access is controlled by the `public_access` table and an HTTP-only session cookie.
+- Admin access uses Supabase Auth and active admin profiles.
+- The Google Maps API key is loaded from Supabase system settings.
+- Route simulation repeats weekly using `day_of_week` values.
